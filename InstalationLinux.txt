@@ -1,0 +1,33 @@
+# Linux setup and auto-start instructions for ManyWhatsApp
+
+1. Create and activate a Python virtual environment
+   python3 -m venv venv
+   source venv/bin/activate
+
+2. Install dependencies
+   pip install -r requirements.txt
+
+3. Optional: set the eCourt history file path
+   export ECOURT_HISTORY=/path/to/whatsapp_history.json
+
+4. Run the app manually for testing
+   python app.py
+
+5. Create a systemd service for auto-start
+   - sudo nano /etc/systemd/system/manywhatsapp.service`
+   - Edit the paths and user in the service file as needed
+   - Reload systemd: `sudo systemctl daemon-reload`
+   - Enable service: `sudo systemctl enable manywhatsapp.service`
+   - Start service: `sudo systemctl start manywhatsapp.service`
+
+6. Check logs
+   sudo journalctl -u manywhatsapp.service -f
+
+---
+
+# Notes
+- The service runs the virtual environment Python interpreter and launches `app.py`.
+- If you do not need the eCourt history import feature, you can omit `ECOURT_HISTORY`.
+- Use `systemctl status manywhatsapp.service` to verify the service state.
+
+

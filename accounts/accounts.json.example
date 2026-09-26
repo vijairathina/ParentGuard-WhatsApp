@@ -1,0 +1,9 @@
+[
+  {
+    "id": "acc_sample1",
+    "name": "Kid Phone (Primary)",
+    "jid": "1234567890@s.whatsapp.net",
+    "phone": "1234567890",
+    "status": "Disconnected"
+  }
+]

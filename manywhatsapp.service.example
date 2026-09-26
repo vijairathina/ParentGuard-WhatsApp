@@ -1,0 +1,16 @@
+[Unit]
+Description=ManyWhatsApp Flask App
+After=network.target
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/path/to/ManyWhatsApp
+Environment=PATH=/path/to/ManyWhatsApp/venv/bin
+Environment=ECOURT_HISTORY=/path/to/whatsapp_history.json
+ExecStart=/path/to/ManyWhatsApp/venv/bin/python /path/to/ManyWhatsApp/app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

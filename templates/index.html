@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ParentGuard WhatsApp - Parental Controlled Multi-Account</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body data-theme="dark">
+    <!-- Realtime Security Alert Notification Toast -->
+    <div id="security-toast-container" class="security-toast-container"></div>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Sidebar Header -->
+            <header class="sidebar-header">
+                <div class="user-profile">
+                    <div class="avatar" id="active-account-avatar">PG</div>
+                    <div class="account-selector-container">
+                        <select id="account-dropdown" class="account-dropdown">
+                            <option value="" disabled selected>Select Account</option>
+                        </select>
+                        <span id="account-status-indicator" class="account-status-badge"></span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <!-- Safety / Incident Logs button -->
+                    <button id="btn-open-logs" title="Safety & Content Incident Logs" class="icon-button position-relative">
+                        <!-- Shield Alert Icon -->
+                        <svg viewBox="0 0 24 24" width="20" height="20" class="svg-icon">
+                            <path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 6h2v6h-2V7zm0 8h2v2h-2v-2z"/>
+                        </svg>
+                        <span id="alert-counter-badge" class="alert-counter-badge" style="display: none;">0</span>
+                    </button>
+
+                    <!-- Settings Button -->
+                    <button id="btn-open-settings" title="Account Settings & AI Safety" class="icon-button">
+                        <!-- Gear Settings Icon -->
+                        <svg viewBox="0 0 24 24" width="20" height="20" class="svg-icon">
+                            <path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                        </svg>
+                    </button>
+
+                    <!-- Add Account Button -->
+                    <button id="btn-add-account" title="Add New Session" class="icon-button">
+                        <!-- Plus icon SVG -->
+                        <svg viewBox="0 0 24 24" width="20" height="20" class="svg-icon">
+                            <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"></path>
+                        </svg>
+                    </button>
+
+                    <!-- Delete Account Button -->
+                    <button id="btn-delete-account" title="Delete Account" class="icon-button danger-hover" disabled>
+                        <!-- Trash icon SVG -->
+                        <svg viewBox="0 0 24 24" width="20" height="20" class="svg-icon">
+                            <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Search Area -->
+            <div class="search-container">
+                <div class="search-bar">
+                    <span class="search-icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" class="svg-icon">
+                            <path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path>
+                        </svg>
+                    </span>
+                    <input type="text" id="chat-search" placeholder="Search chats or type phone number (e.g. 919876543210)">
+                </div>
+            </div>
+
+            <!-- Chat Filter Pills -->
+            <div class="chat-filter-bar">
+                <button class="filter-pill active" data-filter="all">All</button>
+                <button class="filter-pill" data-filter="chats">Chats</button>
+                <button class="filter-pill" data-filter="groups">Groups</button>
+            </div>
+
+            <!-- Contacts/Chats List -->
+            <div class="contacts-scroll" id="contacts-list">
+                <div class="list-empty">
+                    <p>No active accounts connected.</p>
+                    <button id="btn-empty-add-account" class="btn btn-primary">Connect Account</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <!-- Default Empty State -->
+            <div class="empty-state" id="empty-state">
+                <div class="empty-state-content">
+                    <div class="whatsapp-logo-wrapper">
+                        <!-- Shield Logo with WA icon -->
+                        <div class="shield-logo">
+                            <svg viewBox="0 0 24 24" width="84" height="84" class="logo-svg">
+                                <path fill="#00a884" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.67-3.13 9.04-7 10.19-3.87-1.15-7-5.52-7-10.19v-4.7l7-3.12zm-1 4.82v6h2V8h-2zm0 8v2h2v-2h-2z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <h1>ParentGuard WhatsApp</h1>
+                    <p class="brand-tagline">AI-Powered Parental Supervision & Multi-Session WhatsApp Monitor</p>
+                    <div class="feature-badges">
+                        <span class="badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg> Gemini AI Content Scanner</span>
+                        <span class="badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg> Keyword Alerts</span>
+                        <span class="badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"/></svg> Anti-Delete Safeguard</span>
+                        <span class="badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg> External REST API</span>
+                    </div>
+                    <p class="secondary-text">Select an account in the top left, manage keyword safety rules, or review flagged incidents.</p>
+                    <div class="encryption-tag">
+                        <svg viewBox="0 0 24 24" width="12" height="12" class="svg-icon inline-icon">
+                            <path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"></path>
+                        </svg>
+                        <span>Encrypted Session Storage & Local Audit Privacy</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Chat Window -->
+            <div class="chat-window" id="chat-window" style="display: none;">
+                <!-- Chat Header -->
+                <header class="chat-header">
+                    <div class="chat-contact-info">
+                        <div class="avatar" id="chat-avatar">C</div>
+                        <div class="contact-details">
+                            <h2 id="chat-contact-name">Contact Name</h2>
+                            <span id="chat-contact-jid" class="contact-jid">user@server</span>
+                        </div>
+                    </div>
+                    <div class="chat-header-actions">
+                        <span id="chat-monitoring-status" class="monitoring-indicator-pill" title="Live Safety Monitoring Active">
+                            <span class="status-dot-pulse"></span> Protected
+                        </span>
+                    </div>
+                </header>
+
+                <!-- Messages Panel -->
+                <div class="message-panel" id="message-panel">
+                    <!-- Message bubbles rendered dynamically with distinct sender/receiver layout -->
+                </div>
+
+                <!-- Input Panel -->
+                <footer class="input-panel">
+                    <form id="message-form" class="message-form">
+                        <input type="text" id="message-input" placeholder="Type a message" autocomplete="off">
+                        <button type="submit" id="btn-send" class="icon-button send-button" title="Send Message">
+                            <svg viewBox="0 0 24 24" width="22" height="22" class="svg-icon">
+                                <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                            </svg>
+                        </button>
+                    </form>
+                </footer>
+            </div>
+        </main>
+    </div>
+
+    <!-- Link Account Modal (QR Code) -->
+    <div class="modal-overlay" id="add-account-modal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Link WhatsApp Account</h2>
+                <button class="modal-close" id="btn-close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <ol class="setup-steps">
+                    <li>Open WhatsApp on the target or monitored phone</li>
+                    <li>Tap <strong>Menu</strong> (⋮) or <strong>Settings</strong> and tap <strong>Linked Devices</strong></li>
+                    <li>Tap on <strong>Link a Device</strong></li>
+                    <li>Point the phone camera at this screen to scan the QR code</li>
+                </ol>
+                <div class="qr-container">
+                    <div id="qr-loading" class="qr-spinner">
+                        <div class="spinner"></div>
+                        <p>Generating secure session code...</p>
+                    </div>
+                    <img id="qr-image" class="qr-image" style="display: none;" src="" alt="WhatsApp QR Code">
+                </div>
+                <div class="status-footer">
+                    <span class="status-dot warning" id="qr-status-dot"></span>
+                    <span id="qr-status-text">Status: Initializing session...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Comprehensive Per-Account Settings, Safety & External API Modal -->
+    <div class="modal-overlay" id="settings-modal" style="display: none;">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <div class="modal-title-with-badge">
+                    <h2>Account Settings & Parental Safety</h2>
+                    <span id="modal-account-badge" class="badge-account-name">Account</span>
+                </div>
+                <button class="modal-close" id="btn-close-settings">&times;</button>
+            </div>
+            <div class="modal-tabs">
+                <button class="tab-btn active" data-tab="tab-theme">Appearance & Session</button>
+                <button class="tab-btn" data-tab="tab-keywords">Keyword Filter</button>
+                <button class="tab-btn" data-tab="tab-gemini">Gemini AI Safety</button>
+                <button class="tab-btn" data-tab="tab-logs">Audit Incident Logs</button>
+                <button class="tab-btn" data-tab="tab-api">External API & Webhooks</button>
+            </div>
+            <div class="modal-body modal-tabs-content">
+                <!-- Tab 1: Theme & Session Lifecycle (Login / Logout) -->
+                <div class="tab-pane active" id="tab-theme">
+                    <div class="settings-section">
+                        <h3>Session Lifecycle</h3>
+                        <div class="session-info-card">
+                            <div class="session-info-row">
+                                <span class="info-label">Account ID:</span>
+                                <span class="info-val font-mono" id="setting-account-id">-</span>
+                            </div>
+                            <div class="session-info-row">
+                                <span class="info-label">Phone Number:</span>
+                                <span class="info-val" id="setting-account-phone">-</span>
+                            </div>
+                            <div class="session-info-row">
+                                <span class="info-label">Current Status:</span>
+                                <span class="info-val font-weight-bold" id="setting-account-status">Disconnected</span>
+                            </div>
+                        </div>
+                        <div class="session-action-buttons">
+                            <button id="btn-account-login" class="btn btn-primary">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+                                Connect / Log In
+                            </button>
+                            <button id="btn-account-logout" class="btn btn-secondary">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+                                Disconnect / Log Out
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Interface Theme (Per-Account)</h3>
+                        <p class="secondary-text">Select your preferred color palette for this account session:</p>
+                        <div class="theme-grid">
+                            <label class="theme-card">
+                                <input type="radio" name="account-theme" value="dark" checked>
+                                <div class="theme-preview theme-dark">
+                                    <span class="preview-bubble-in"></span>
+                                    <span class="preview-bubble-out"></span>
+                                </div>
+                                <span class="theme-name">WhatsApp Dark</span>
+                            </label>
+                            <label class="theme-card">
+                                <input type="radio" name="account-theme" value="light">
+                                <div class="theme-preview theme-light">
+                                    <span class="preview-bubble-in"></span>
+                                    <span class="preview-bubble-out"></span>
+                                </div>
+                                <span class="theme-name">WhatsApp Light</span>
+                            </label>
+                            <label class="theme-card">
+                                <input type="radio" name="account-theme" value="emerald">
+                                <div class="theme-preview theme-emerald">
+                                    <span class="preview-bubble-in"></span>
+                                    <span class="preview-bubble-out"></span>
+                                </div>
+                                <span class="theme-name">Emerald Night</span>
+                            </label>
+                            <label class="theme-card">
+                                <input type="radio" name="account-theme" value="midnight">
+                                <div class="theme-preview theme-midnight">
+                                    <span class="preview-bubble-in"></span>
+                                    <span class="preview-bubble-out"></span>
+                                </div>
+                                <span class="theme-name">Midnight OLED</span>
+                            </label>
+                            <label class="theme-card">
+                                <input type="radio" name="account-theme" value="guardian">
+                                <div class="theme-preview theme-guardian">
+                                    <span class="preview-bubble-in"></span>
+                                    <span class="preview-bubble-out"></span>
+                                </div>
+                                <span class="theme-name">ParentGuard Shield</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Keyword Filter -->
+                <div class="tab-pane" id="tab-keywords">
+                    <div class="settings-section">
+                        <div class="form-toggle-row">
+                            <div>
+                                <h3>Enable Keyword Safety Rules</h3>
+                                <p class="secondary-text">Automatically flag and log messages matching sensitive or restricted words.</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="setting-keywords-enabled" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="setting-monitor-direction">Monitoring Direction:</label>
+                            <select id="setting-monitor-direction" class="form-select">
+                                <option value="all">Both Outgoing & Incoming Messages</option>
+                                <option value="outgoing">Outgoing (Sent by child / user)</option>
+                                <option value="incoming">Incoming (Received from others)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="setting-keywords-list">Restricted Keywords (Comma Separated):</label>
+                            <textarea id="setting-keywords-list" class="form-textarea" rows="5" placeholder="e.g. illegal, drugs, knife, weapon, cheat, password, suicide"></textarea>
+                            <span class="field-hint">Matches are case-insensitive. Messages matching any keyword are recorded into Incident Logs with time & chat details.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Gemini AI Safety Engine -->
+                <div class="tab-pane" id="tab-gemini">
+                    <div class="settings-section">
+                        <div class="form-toggle-row">
+                            <div>
+                                <h3>Google Gemini AI Safety Scanner</h3>
+                                <p class="secondary-text">Intelligently detects illegal activities, harassment, adult content, profanity, and safety hazards that evade simple keyword filters.</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="setting-gemini-enabled">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="setting-gemini-key">Google Gemini API Key:</label>
+                            <div class="input-with-action">
+                                <input type="password" id="setting-gemini-key" class="form-input" placeholder="AIzaSy...">
+                                <button type="button" id="btn-toggle-key-visibility" class="btn btn-outline">Show</button>
+                            </div>
+                            <span class="field-hint">Leave blank to use the server's default <code>GEMINI_API_KEY</code> environment variable if configured.</span>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="setting-gemini-sensitivity">Moderation Sensitivity:</label>
+                            <select id="setting-gemini-sensitivity" class="form-select">
+                                <option value="moderate">Moderate (Standard Parental Supervision: Illegal acts, violence, severe harassment, secrets)</option>
+                                <option value="strict">Strict (Strict Safety: Flags all profanity, suspicious phrasing, unknown links, and mild slang)</option>
+                            </select>
+                        </div>
+
+                        <div class="test-gemini-box mt-4">
+                            <h4>Test Gemini AI Safety Detection</h4>
+                            <div class="test-input-row">
+                                <input type="text" id="test-gemini-input" class="form-input" placeholder="Enter sample message (e.g. 'Can you sell me some illegal pills?')">
+                                <button type="button" id="btn-test-gemini" class="btn btn-primary">Test AI</button>
+                            </div>
+                            <div id="test-gemini-result" class="test-result-box" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Safety Incident Logs -->
+                <div class="tab-pane" id="tab-logs">
+                    <div class="logs-header-actions">
+                        <div>
+                            <h3>Safety Violation & Content Logs</h3>
+                            <p class="secondary-text">Audit log of all flagged messages, timestamps, and detection reasons.</p>
+                        </div>
+                        <div class="logs-btn-group">
+                            <button id="btn-refresh-logs" class="btn btn-outline">Refresh</button>
+                            <button id="btn-export-logs" class="btn btn-outline">Export CSV</button>
+                            <button id="btn-clear-logs" class="btn btn-danger">Clear Logs</button>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="logs-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Direction</th>
+                                    <th>Chat / Sender</th>
+                                    <th>Flagged Message</th>
+                                    <th>Detection Method</th>
+                                    <th>Severity</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-table-body">
+                                <tr>
+                                    <td colspan="7" class="text-center py-4">Loading safety logs...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 5: External REST API & Webhooks -->
+                <div class="tab-pane" id="tab-api">
+                    <div class="settings-section">
+                        <h3>Access This Account from Other Apps (REST API)</h3>
+                        <p class="secondary-text">Use these endpoints to send/receive messages, check status, and automate workflows from your other applications.</p>
+                        
+                        <div class="api-card mt-3">
+                            <div class="api-method-badge post">POST</div>
+                            <div class="api-url-info">
+                                <span class="font-mono">/api/v1/accounts/<span class="api-active-acc">ACCOUNT_ID</span>/send</span>
+                                <small>Send WhatsApp message</small>
+                            </div>
+                        </div>
+                        <pre class="api-code-block">curl -X POST http://localhost:5003/api/v1/accounts/<span class="api-active-acc">ACCOUNT_ID</span>/send \
+  -H "Content-Type: application/json" \
+  -d '{"to": "919876543210", "message": "Hello from external application!"}'</pre>
+
+                        <div class="api-card mt-3">
+                            <div class="api-method-badge get">GET</div>
+                            <div class="api-url-info">
+                                <span class="font-mono">/api/v1/accounts/<span class="api-active-acc">ACCOUNT_ID</span>/messages?contact=919876543210</span>
+                                <small>Get message history with contact or group</small>
+                            </div>
+                        </div>
+
+                        <div class="api-card mt-3">
+                            <div class="api-method-badge get">GET</div>
+                            <div class="api-url-info">
+                                <span class="font-mono">/api/v1/accounts/<span class="api-active-acc">ACCOUNT_ID</span>/messages/latest?since=1790000000</span>
+                                <small>Poll all new incoming and outgoing messages across all chats</small>
+                            </div>
+                        </div>
+
+                        <div class="api-card mt-3">
+                            <div class="api-method-badge get">GET</div>
+                            <div class="api-url-info">
+                                <span class="font-mono">/api/v1/accounts/<span class="api-active-acc">ACCOUNT_ID</span>/chats</span>
+                                <small>Get list of all conversations and last messages</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Realtime Webhooks</h3>
+                        <p class="secondary-text">Receive real-time POST events whenever a message is received, sent, or deleted.</p>
+                        
+                        <div class="webhook-form-row mt-3">
+                            <input type="url" id="webhook-url-input" class="form-input" placeholder="https://my-other-app.com/api/wa-events">
+                            <button type="button" id="btn-register-webhook" class="btn btn-primary">Subscribe Webhook</button>
+                        </div>
+
+                        <div class="mt-3">
+                            <h4>Registered Webhook Subscriptions:</h4>
+                            <div id="webhooks-list" class="webhooks-list-container">
+                                <small class="text-secondary">Loading webhooks...</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-cancel-settings">Close</button>
+                <button type="button" class="btn btn-primary" id="btn-save-settings">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</body>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</html>
