@@ -27,6 +27,7 @@ class WhatsAppManager:
         self.profile_info: Dict[str, Dict[str, Any]] = {}
         self.listeners: List[queue.Queue] = []
         self.monitor = ContentMonitor()
+        self.lid_maps: Dict[str, Dict[str, Dict[str, str]]] = {}
         
         # Ensure directory exists
         os.makedirs("accounts", exist_ok=True)
@@ -831,9 +832,23 @@ class WhatsAppManager:
                 is_group = "@g.us" in chat_jid
                 self.save_contact(account_id, chat_jid, push_name, is_group=is_group)
             
+            # Resolve alt_jid if LID or Phone
+            alt_jid = ""
+            clean_u = chat_jid.split("@")[0] if "@" in chat_jid else chat_jid
+            lid_map = self.load_lid_map(account_id)
+            if "@lid" in chat_jid or clean_u in lid_map.get("lid_to_pn", {}):
+                pn = lid_map.get("lid_to_pn", {}).get(clean_u)
+                if pn:
+                    alt_jid = f"{pn}@s.whatsapp.net"
+            elif "@s.whatsapp.net" in chat_jid or clean_u in lid_map.get("pn_to_lid", {}):
+                lid = lid_map.get("pn_to_lid", {}).get(clean_u)
+                if lid:
+                    alt_jid = f"{lid}@lid"
+
             # Broadcast to web app UI
             self.broadcast("message", account_id, {
                 "chat_jid": chat_jid,
+                "alt_jid": alt_jid,
                 "message": msg_data
             })
 
@@ -997,6 +1012,10 @@ class WhatsAppManager:
                 pass
 
         # 4. Chat History: Extract last message snippet and active timestamps
+        lid_map = self.load_lid_map(account_id)
+        lid_to_pn = lid_map.get("lid_to_pn", {})
+        pn_to_lid = lid_map.get("pn_to_lid", {})
+
         if os.path.exists(HISTORY_FILE):
             try:
                 with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -1024,14 +1043,37 @@ class WhatsAppManager:
                         else:
                             last_body = last_m.get("body", "")
 
+                        # Match with contacts_map via exact JID, LID-to-phone, or local user
+                        clean_user = chat_jid.split("@")[0] if "@" in chat_jid else chat_jid
+                        target_key = None
                         if chat_jid in contacts_map:
-                            contacts_map[chat_jid]["timestamp"] = max(contacts_map[chat_jid].get("timestamp", 0), last_ts)
-                            contacts_map[chat_jid]["last_message"] = last_body
+                            target_key = chat_jid
+                        elif clean_user in lid_to_pn:
+                            pn = lid_to_pn[clean_user]
+                            for alt in [f"{pn}@s.whatsapp.net", f"{pn}@c.us", pn]:
+                                if alt in contacts_map:
+                                    target_key = alt
+                                    break
+                        elif clean_user in pn_to_lid:
+                            lid = pn_to_lid[clean_user]
+                            if f"{lid}@lid" in contacts_map:
+                                target_key = f"{lid}@lid"
+
+                        if not target_key:
+                            for c_k in contacts_map.keys():
+                                if c_k.split("@")[0] == clean_user:
+                                    target_key = c_k
+                                    break
+
+                        if target_key:
+                            contacts_map[target_key]["timestamp"] = max(contacts_map[target_key].get("timestamp", 0), last_ts)
+                            contacts_map[target_key]["last_message"] = last_body
                         else:
                             is_group = chat_jid.endswith("@g.us")
+                            c_name = lid_to_pn.get(clean_user, clean_user) if not is_group else clean_user
                             contacts_map[chat_jid] = {
                                 "jid": chat_jid,
-                                "name": chat_jid.split("@")[0],
+                                "name": c_name,
                                 "is_group": is_group,
                                 "timestamp": last_ts,
                                 "last_message": last_body
@@ -1053,6 +1095,38 @@ class WhatsAppManager:
                     json.dump(merged, f, indent=2)
             except Exception as e:
                 print(f"[Manager] Error writing merged contacts: {e}")
+
+    def load_lid_map(self, account_id: str) -> Dict[str, Dict[str, str]]:
+        """Reads whatsmeow_lid_map from SQLite session database for two-way LID <-> Phone translation."""
+        if hasattr(self, 'lid_maps') and account_id in self.lid_maps:
+            return self.lid_maps[account_id]
+        
+        db_path = f"accounts/{account_id}.db"
+        lid_to_pn = {}
+        pn_to_lid = {}
+        if os.path.exists(db_path):
+            try:
+                import sqlite3
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='whatsmeow_lid_map';")
+                if cursor.fetchone():
+                    cursor.execute("SELECT lid, pn FROM whatsmeow_lid_map;")
+                    for r in cursor.fetchall():
+                        if len(r) >= 2 and r[0] and r[1]:
+                            lid_str = str(r[0]).strip()
+                            pn_str = str(r[1]).strip()
+                            lid_to_pn[lid_str] = pn_str
+                            pn_to_lid[pn_str] = lid_str
+                conn.close()
+            except Exception as e:
+                print(f"[Manager] Error loading LID map for {account_id}: {e}")
+        
+        result = {"lid_to_pn": lid_to_pn, "pn_to_lid": pn_to_lid}
+        if not hasattr(self, 'lid_maps'):
+            self.lid_maps = {}
+        self.lid_maps[account_id] = result
+        return result
 
     def get_contacts(self, account_id: str) -> List[Dict[str, Any]]:
         CONTACTS_FILE = f"accounts/contacts_{account_id}.json"
@@ -1100,37 +1174,86 @@ class WhatsAppManager:
 
     def get_messages(self, account_id: str, chat_jid: str) -> List[Dict[str, Any]]:
         HISTORY_FILE = f"accounts/history_{account_id}.json"
-        if os.path.exists(HISTORY_FILE):
-            try:
-                with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                    history = json.load(f)
-                    messages = []
-                    if chat_jid in history:
-                        messages = history.get(chat_jid, [])
-                    else:
-                        alt_key = self._find_alternate_chat_key(history, chat_jid)
-                        if alt_key:
-                            messages = history.get(alt_key, [])
+        if not os.path.exists(HISTORY_FILE):
+            return []
 
-                    # Auto-heal outgoing status if message was sent by this account
-                    own_info = self.profile_info.get(account_id, {})
-                    own_jid = own_info.get("jid", "")
-                    own_phone = own_info.get("phone", "")
-                    for m in messages:
-                        s = str(m.get("sender", ""))
-                        sn = str(m.get("sender_name", ""))
-                        # If sender is "Me", or ID starts with 'out_', or sender matches own JID/phone
-                        if not m.get("is_outgoing"):
-                            if sn == "Me" or str(m.get("id", "")).startswith("out_"):
-                                m["is_outgoing"] = True
-                            elif own_jid and (s == own_jid or s.split("@")[0] == own_jid.split("@")[0]):
-                                m["is_outgoing"] = True
-                            elif own_phone and (s.startswith(own_phone) or s.split("@")[0] == own_phone):
-                                m["is_outgoing"] = True
-                    return messages
-            except:
-                pass
-        return []
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            return []
+
+        if not history or not chat_jid:
+            return []
+
+        matching_keys = set()
+        if chat_jid in history:
+            matching_keys.add(chat_jid)
+
+        lid_map = self.load_lid_map(account_id)
+        lid_to_pn = lid_map.get("lid_to_pn", {})
+        pn_to_lid = lid_map.get("pn_to_lid", {})
+
+        clean_user = chat_jid.split("@")[0] if "@" in chat_jid else chat_jid
+        clean_user_digits = "".join(filter(str.isdigit, clean_user))
+
+        # 1. If chat_jid is @lid, check mapped phone number
+        if "@lid" in chat_jid or clean_user in lid_to_pn:
+            pn = lid_to_pn.get(clean_user)
+            if pn:
+                for k in [f"{pn}@s.whatsapp.net", f"{pn}@c.us", pn]:
+                    if k in history:
+                        matching_keys.add(k)
+
+        # 2. If chat_jid is phone (@s.whatsapp.net or digits), check mapped LID
+        if "@s.whatsapp.net" in chat_jid or clean_user in pn_to_lid or clean_user_digits in pn_to_lid:
+            lid = pn_to_lid.get(clean_user) or pn_to_lid.get(clean_user_digits)
+            if lid:
+                for k in [f"{lid}@lid", lid]:
+                    if k in history:
+                        matching_keys.add(k)
+
+        # 3. Fallback: match by local user part or alternate domains
+        if not matching_keys:
+            alt = self._find_alternate_chat_key(history, chat_jid)
+            if alt:
+                matching_keys.add(alt)
+
+        for k in history.keys():
+            k_user = k.split("@")[0] if "@" in k else k
+            if k_user == clean_user:
+                matching_keys.add(k)
+
+        # Gather messages from all matching keys & deduplicate
+        seen_ids = set()
+        messages = []
+        for k in matching_keys:
+            for m in history.get(k, []):
+                mid = m.get("id")
+                if mid and mid in seen_ids:
+                    continue
+                if mid:
+                    seen_ids.add(mid)
+                messages.append(m)
+
+        # Auto-heal outgoing status if message was sent by this account
+        own_info = self.profile_info.get(account_id, {})
+        own_jid = own_info.get("jid", "")
+        own_phone = own_info.get("phone", "")
+        for m in messages:
+            s = str(m.get("sender", ""))
+            sn = str(m.get("sender_name", ""))
+            if not m.get("is_outgoing"):
+                if sn == "Me" or str(m.get("id", "")).startswith("out_"):
+                    m["is_outgoing"] = True
+                elif own_jid and (s == own_jid or s.split("@")[0] == own_jid.split("@")[0]):
+                    m["is_outgoing"] = True
+                elif own_phone and (s.startswith(own_phone) or s.split("@")[0] == own_phone):
+                    m["is_outgoing"] = True
+
+        # Sort chronologically
+        messages.sort(key=lambda x: x.get("timestamp", 0))
+        return messages
 
     def import_ecourt_history(self, account_id: str, ecourt_history_path: str):
         """
@@ -1253,9 +1376,23 @@ class WhatsAppManager:
             is_group = "@g.us" in target_str
             self.save_contact(account_id, target_str, target_str.split('@')[0], is_group=is_group)
             
+            # Resolve alt_jid
+            alt_jid = ""
+            clean_t = target_str.split("@")[0] if "@" in target_str else target_str
+            lid_map = self.load_lid_map(account_id)
+            if "@lid" in target_str or clean_t in lid_map.get("lid_to_pn", {}):
+                pn = lid_map.get("lid_to_pn", {}).get(clean_t)
+                if pn:
+                    alt_jid = f"{pn}@s.whatsapp.net"
+            elif "@s.whatsapp.net" in target_str or clean_t in lid_map.get("pn_to_lid", {}):
+                lid = lid_map.get("pn_to_lid", {}).get(clean_t)
+                if lid:
+                    alt_jid = f"{lid}@lid"
+
             # Broadcast outgoing message to UI
             self.broadcast("message", account_id, {
                 "chat_jid": target_str,
+                "alt_jid": alt_jid,
                 "message": msg_data
             })
 

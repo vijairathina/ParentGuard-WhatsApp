@@ -213,9 +213,14 @@ if __name__ == '__main__':
     # whatsapp_history.json in the repo root.
     ECOURT_HISTORY = os.environ.get("ECOURT_HISTORY")
     if not ECOURT_HISTORY:
-        candidate = os.path.join(os.path.dirname(__file__), "whatsapp_history.json")
-        if os.path.exists(candidate):
-            ECOURT_HISTORY = candidate
+        for candidate in [
+            os.path.join(os.path.dirname(__file__), "whatsapp_history.json"),
+            r"D:\PY\eCourt\Backup\whatsapp_history.json",
+            r"D:\PY\eCourt\eCourtsServices 3.0\ecourt_flask\whatsapp_history.json"
+        ]:
+            if os.path.exists(candidate):
+                ECOURT_HISTORY = candidate
+                break
 
     if ECOURT_HISTORY and os.path.exists(ECOURT_HISTORY):
         import threading as _threading

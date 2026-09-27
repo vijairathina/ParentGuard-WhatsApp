@@ -202,19 +202,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // Handle Message Event
                 else if (type === "message") {
-                    const { chat_jid, message } = data;
+                    const { chat_jid, alt_jid, message } = data;
                     if (account_id === activeAccountId) {
-                        updateContactLastMessage(chat_jid, message);
+                        updateContactLastMessage(chat_jid, message, alt_jid);
                     }
 
-                    const normalizeLocal = (j) => (j || "").toString().split('@')[0];
-                    const sameChat = (chat_jid === activeContactJid) || (
-                        activeContactJid && normalizeLocal(chat_jid) === normalizeLocal(activeContactJid)
-                    );
-
+                    const sameChat = isMatchingChat(chat_jid, activeContactJid, alt_jid);
                     if (sameChat && account_id === activeAccountId) {
-                        appendMessageBubble(message);
-                        scrollToBottom();
+                        // Check if bubble with this message ID was already appended optimistically
+                        const existing = document.querySelector(`.message[data-msg-id="${message.id}"]`);
+                        if (!existing) {
+                            // If empty state placeholder is showing, clear it first
+                            const placeholder = messagePanel.querySelector(".empty-chat-placeholder");
+                            if (placeholder) messagePanel.innerHTML = "";
+                            appendMessageBubble(message);
+                            scrollToBottom();
+                        }
                     }
                 }
 
@@ -1007,17 +1010,44 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadMessages() {
         if (!activeAccountId || !activeContactJid) return;
 
+        messagePanel.innerHTML = `
+            <div class="empty-chat-placeholder" style="opacity: 0.6; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">
+                <div class="spinner" style="width: 24px; height: 24px; border: 2px solid rgba(255,255,255,0.2); border-top-color: var(--wa-green); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 10px;"></div>
+                <p style="font-size: 13px;">Loading conversation...</p>
+            </div>
+        `;
+
         try {
             const res = await fetch(`/api/accounts/${activeAccountId}/messages?contact=${encodeURIComponent(activeContactJid)}`);
-            const messages = await res.json();
+            let messages = await res.json();
+            
+            if (!Array.isArray(messages)) {
+                messages = messages.messages || [];
+            }
             
             messagePanel.innerHTML = "";
+            if (messages.length === 0) {
+                messagePanel.innerHTML = `
+                    <div class="empty-chat-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80%; text-align: center; color: var(--text-secondary); margin: auto;">
+                        <div style="font-size: 38px; margin-bottom: 8px;">💬</div>
+                        <p style="font-weight: 500; font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">No messages yet</p>
+                        <small style="font-size: 12.5px;">Send a message below to start the conversation.</small>
+                    </div>
+                `;
+                return;
+            }
+
             messages.forEach(msg => {
                 appendMessageBubble(msg);
             });
             scrollToBottom();
         } catch (err) {
             console.error("Error loading messages:", err);
+            messagePanel.innerHTML = `
+                <div class="empty-chat-placeholder" style="text-align: center; padding: 40px; color: var(--danger);">
+                    <p>Failed to load messages: ${escapeHTML(err.message)}</p>
+                </div>
+            `;
         }
     }
 
@@ -1196,14 +1226,14 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
-    function updateContactLastMessage(chatJid, msg) {
-        let contact = contacts.find(c => c.jid === chatJid);
+    function updateContactLastMessage(chatJid, msg, altJid) {
+        let contact = contacts.find(c => isMatchingChat(chatJid, c.jid, altJid));
         
         let snippet = msg.body || '';
         if (msg.is_deleted) {
             snippet = "🚫 This message was deleted";
         } else if (msg.attachment) {
-            const icons = { image: "📷 Photo", audio: "🎵 Voice note", video: "🎥 Video", document: "📄 Document" };
+            const icons = { image: "📷 Photo", audio: "🎵 Voice note", video: "🎥 Video", document: "📄 Document", sticker: "✨ Sticker" };
             snippet = icons[msg.attachment.type] || `[${msg.attachment.type}]`;
         }
 
@@ -1273,6 +1303,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
         messageInput.value = "";
         
+        // Optimistic UI Rendering: immediately bind bubble in UI
+        const tempId = `out_temp_${Date.now()}`;
+        const tempMsg = {
+            id: tempId,
+            sender: "Me",
+            sender_name: "Me",
+            chat_jid: activeContactJid,
+            body: text,
+            timestamp: Math.floor(Date.now() / 1000),
+            is_outgoing: true
+        };
+
+        // If placeholder empty notice is showing, clear it first
+        const placeholder = messagePanel.querySelector(".empty-chat-placeholder");
+        if (placeholder) {
+            messagePanel.innerHTML = "";
+        }
+
+        appendMessageBubble(tempMsg);
+        scrollToBottom();
+        updateContactLastMessage(activeContactJid, tempMsg);
+
         try {
             const res = await fetch(`/api/accounts/${activeAccountId}/send`, {
                 method: "POST",
@@ -1284,12 +1336,39 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             const data = await res.json();
             if (!data.success) {
-                alert("Failed to send message. Account may be disconnected.");
+                const bubble = document.querySelector(`.message[data-msg-id="${tempId}"]`);
+                if (bubble) {
+                    bubble.style.borderColor = "var(--danger)";
+                    const timeEl = bubble.querySelector(".message-time");
+                    if (timeEl) timeEl.innerHTML += ` <span style="color: var(--danger);" title="Failed to deliver">⚠️</span>`;
+                }
+                alert(data.error || "Failed to send message. Account may be disconnected.");
             }
         } catch (err) {
             console.error("Error sending message:", err);
+            const bubble = document.querySelector(`.message[data-msg-id="${tempId}"]`);
+            if (bubble) {
+                bubble.style.borderColor = "var(--danger)";
+            }
             alert("Network error sending message.");
         }
+    }
+
+    function isMatchingChat(incomingJid, currentJid, altJid) {
+        if (!incomingJid || !currentJid) return false;
+        if (incomingJid === currentJid) return true;
+        if (altJid && (altJid === currentJid || altJid === incomingJid)) return true;
+
+        const user1 = incomingJid.split('@')[0];
+        const user2 = currentJid.split('@')[0];
+        if (user1 === user2) return true;
+
+        const digits1 = user1.replace(/\D/g, '');
+        const digits2 = user2.replace(/\D/g, '');
+        if (digits1 && digits2 && (digits1 === digits2 || digits1.endsWith(digits2) || digits2.endsWith(digits1))) {
+            if (digits1.length >= 8 && digits2.length >= 8) return true;
+        }
+        return false;
     }
 
     // --- Utilities ---
