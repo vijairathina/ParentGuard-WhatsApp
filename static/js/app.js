@@ -895,8 +895,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- Contacts & Chats Logic ---
     async function loadContacts() {
         if (!activeAccountId) return;
-        const activeAcc = accounts.find(a => a.id === activeAccountId);
-        if (!activeAcc || activeAcc.status !== "Connected") return;
 
         try {
             const res = await fetch(`/api/accounts/${activeAccountId}/contacts`);
@@ -944,7 +942,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         contactsListToRender.forEach(c => {
             const item = document.createElement("div");
-            item.className = `contact-item ${c.jid === activeContactJid ? 'active' : ''}`;
+            item.className = `contact-item ${isMatchingChat(c.jid, activeContactJid) ? 'active' : ''}`;
             
             const initials = c.name ? c.name.substring(0, 2).toUpperCase() : "WA";
             const avatarClass = c.is_group ? "contact-avatar group-avatar" : "contact-avatar";

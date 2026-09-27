@@ -32,6 +32,65 @@ class WhatsAppManager:
         # Ensure directory exists
         os.makedirs("accounts", exist_ok=True)
         self.load_accounts()
+        self.start_external_history_watcher()
+
+    def start_external_history_watcher(self):
+        """
+        Continuously watches external whatsapp_history.json (produced by whatsapp_service.py)
+        and merges any newly arrived messages into active WhatsApp accounts in real-time.
+        """
+        def _watcher():
+            mtimes = {}
+            candidate_paths = [
+                os.path.join(os.path.dirname(__file__), "whatsapp_history.json"),
+                r"D:\PY\eCourt\Backup\whatsapp_history.json",
+                r"D:\PY\eCourt\eCourtsServices 3.0\ecourt_flask\whatsapp_history.json",
+                r"D:\PY\eCourt\eCourtsServices 3.0\ecourt_flask - Copy\whatsapp_history.json",
+                r"D:\PY\eCourt\ecourt_flask 1.0\whatsapp_history.json"
+            ]
+            env_path = os.environ.get("ECOURT_HISTORY")
+            if env_path and env_path not in candidate_paths:
+                candidate_paths.insert(0, env_path)
+
+            # Initialize initial modification times
+            for p in candidate_paths:
+                if p and os.path.exists(p):
+                    try:
+                        mtimes[p] = os.path.getmtime(p)
+                    except Exception:
+                        pass
+
+            while True:
+                time.sleep(1.5)
+                for p in candidate_paths:
+                    if not p or not os.path.exists(p):
+                        continue
+                    try:
+                        mtime = os.path.getmtime(p)
+                        last_m = mtimes.get(p)
+                        if last_m is None:
+                            mtimes[p] = mtime
+                            continue
+                        if mtime > last_m:
+                            mtimes[p] = mtime
+                            print(f"[Watcher] Detected live update in {p} from whatsapp_service!")
+                            for acc_id in list(self.profile_info.keys()):
+                                count = self.import_ecourt_history(acc_id, p)
+                                if count > 0:
+                                    self.merge_contacts_groups(acc_id)
+                                    self.broadcast("contacts_updated", acc_id, {})
+                                    top_contacts = self.get_contacts(acc_id)
+                                    if top_contacts:
+                                        top_c = top_contacts[0]
+                                        msgs = self.get_messages(acc_id, top_c["jid"])
+                                        if msgs:
+                                            self.broadcast("message", acc_id, {
+                                                "chat_jid": top_c["jid"],
+                                                "message": msgs[-1]
+                                            })
+                    except Exception:
+                        pass
+        threading.Thread(target=_watcher, daemon=True, name="external_history_watcher").start()
 
     def get_listeners(self):
         return self.listeners
@@ -736,22 +795,24 @@ class WhatsAppManager:
             # Pushname
             push_name = getattr(info, 'Pushname', "") or getattr(info, 'PushName', "") or sender
             
-            # Message body and attachments
-            msg = None
-            # Try several attribute names that may contain the inner message
-            for attr in ('Message', 'message', 'Raw', 'raw'):
-                try:
-                    candidate = getattr(info, attr, None)
-                except Exception:
-                    candidate = None
-                if candidate:
-                    msg = candidate
-                    break
-
-            # Fallback: sometimes `info` itself is the message payload
+            # Message body and attachments: Look on message_ev FIRST!
+            msg = getattr(message_ev, 'Message', None) or getattr(message_ev, 'message', None) or getattr(message_ev, 'Raw', None)
             if not msg:
-                if info and (hasattr(info, 'WhichOneof') or any(hasattr(info, a) for a in ('conversation', 'extendedTextMessage', 'imageMessage', 'videoMessage', 'documentMessage', 'stickerMessage'))):
-                    msg = info
+                for attr in ('Message', 'message', 'Raw', 'raw'):
+                    try:
+                        candidate = getattr(info, attr, None)
+                    except Exception:
+                        candidate = None
+                    if candidate:
+                        msg = candidate
+                        break
+
+            # Fallback: check if info or message_ev itself has message attributes
+            if not msg:
+                for obj in (message_ev, info):
+                    if obj and (hasattr(obj, 'WhichOneof') or any(hasattr(obj, a) for a in ('conversation', 'extendedTextMessage', 'imageMessage', 'videoMessage', 'documentMessage', 'stickerMessage'))):
+                        msg = obj
+                        break
 
             # Check for Revoke (Deleted Message)
             if msg and hasattr(msg, 'protocolMessage') and msg.protocolMessage:
@@ -779,6 +840,10 @@ class WhatsAppManager:
                     text = msg.conversation
                 elif hasattr(msg, 'extendedTextMessage') and msg.extendedTextMessage:
                     text = getattr(msg.extendedTextMessage, 'text', "")
+                elif hasattr(msg, 'documentWithCaptionMessage') and msg.documentWithCaptionMessage:
+                    dm = getattr(msg.documentWithCaptionMessage, 'message', None)
+                    if dm and hasattr(dm, 'documentMessage'):
+                        text = getattr(dm.documentMessage, 'caption', "")
 
             if not text:
                 if attachment and attachment.get("caption"):
@@ -787,7 +852,9 @@ class WhatsAppManager:
                     att_type = attachment.get("type", "attachment")
                     text = "[" + att_type[:1].upper() + att_type[1:] + "]"
                 else:
-                    text = "[Attachment or Non-text message]"
+                    text = ""
+
+            print(f"[Manager][{account_id}] Live message from {sender} ({push_name}) in {chat_jid}: '{text[:45]}'")
 
             # Check if outgoing (IsFromMe from WhatsApp protobuf is canonical)
             own_info = self.profile_info.get(account_id, {})
@@ -831,6 +898,9 @@ class WhatsAppManager:
             if not is_outgoing:
                 is_group = "@g.us" in chat_jid
                 self.save_contact(account_id, chat_jid, push_name, is_group=is_group)
+
+            # Update contacts cache so sidebar has latest message & timestamp
+            self.merge_contacts_groups(account_id)
             
             # Resolve alt_jid if LID or Phone
             alt_jid = ""
@@ -851,6 +921,7 @@ class WhatsAppManager:
                 "alt_jid": alt_jid,
                 "message": msg_data
             })
+            self.broadcast("contacts_updated", account_id, {})
 
             # Asynchronously download media (image, audio, video, document)
             if attachment and client:
