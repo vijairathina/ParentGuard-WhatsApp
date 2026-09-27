@@ -905,6 +905,97 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // --- Name & Phone Number Resolution Helpers ---
+    function isProperName(name) {
+        if (!name || typeof name !== 'string') return false;
+        const trimmed = name.trim();
+        if (!trimmed || trimmed === '.' || trimmed === '..' || trimmed === '-' || trimmed === 'WA' || trimmed === 'null' || trimmed === 'None' || trimmed === 'Unknown' || trimmed === 'Member') {
+            return false;
+        }
+        const cleanDigits = trimmed.replace(/[@\s\-\+\(\)\.]/g, '');
+        if (/^\d+$/.test(cleanDigits) || trimmed.includes('@lid') || trimmed.includes('@s.whatsapp.net')) {
+            return false;
+        }
+        return true;
+    }
+
+    function formatPhoneNumber(numOrJid) {
+        if (!numOrJid) return "";
+        let clean = String(numOrJid).split('@')[0].replace(/[^\d+]/g, '');
+        if (!clean) return String(numOrJid).split('@')[0];
+        if (clean.startsWith('+')) clean = clean.substring(1);
+        
+        // India (12 digits starting with 91)
+        if (clean.length === 12 && clean.startsWith('91')) {
+            return `+91 ${clean.substring(2, 7)} ${clean.substring(7)}`;
+        }
+        // India local 10 digits
+        if (clean.length === 10 && ['6','7','8','9'].includes(clean[0])) {
+            return `+91 ${clean.substring(0, 5)} ${clean.substring(5)}`;
+        }
+        // US / Canada (11 digits starting with 1)
+        if (clean.length === 11 && clean.startsWith('1')) {
+            return `+1 (${clean.substring(1, 4)}) ${clean.substring(4, 7)}-${clean.substring(7)}`;
+        }
+        // UK (12 digits starting with 44)
+        if (clean.length === 12 && clean.startsWith('44')) {
+            return `+44 ${clean.substring(2, 6)} ${clean.substring(6)}`;
+        }
+        // General International
+        if (clean.length >= 7 && clean.length <= 15) {
+            if (clean.length > 10) {
+                return `+${clean.substring(0, clean.length - 10)} ${clean.substring(clean.length - 10, clean.length - 5)} ${clean.substring(clean.length - 5)}`;
+            }
+            return `+${clean}`;
+        }
+        return `+${clean}`;
+    }
+
+    function getChatDisplayName(contact) {
+        if (!contact) return "Chat";
+        if (contact.is_group) {
+            if (isProperName(contact.name)) return contact.name;
+            return "WhatsApp Group";
+        }
+        // If contact has a saved name, ALWAYS return that name!
+        if (isProperName(contact.name)) {
+            return contact.name;
+        }
+        // If new number: use phone number
+        const phone = contact.phone_number || (contact.jid && !contact.jid.includes('@lid') ? contact.jid.split('@')[0] : '');
+        if (phone && phone.replace(/[^\d]/g, '').length >= 7) {
+            return formatPhoneNumber(phone);
+        }
+        // Fallback: check if JID has phone number digits
+        if (contact.jid) {
+            const rawUser = contact.jid.split('@')[0];
+            if (!contact.jid.includes('@lid') && rawUser.length >= 7 && rawUser.length <= 13) {
+                return formatPhoneNumber(rawUser);
+            }
+        }
+        return "New Contact";
+    }
+
+    function getChatInitials(contact, displayName) {
+        if (contact && contact.is_group) {
+            return "👥";
+        }
+        const name = displayName || (contact ? contact.name : "");
+        if (name && isProperName(name)) {
+            const parts = name.trim().split(/\s+/).filter(Boolean);
+            if (parts.length >= 2) {
+                return (parts[0][0] + parts[1][0]).toUpperCase();
+            }
+            return name.substring(0, 2).toUpperCase();
+        }
+        // Unsaved phone number: show last 2 digits
+        if (name && name.startsWith('+')) {
+            const digits = name.replace(/[^\d]/g, '');
+            return digits.length >= 2 ? digits.slice(-2) : "#";
+        }
+        return "👤";
+    }
+
     function applyFiltersAndRender() {
         let filtered = contacts;
         
@@ -915,13 +1006,15 @@ document.addEventListener("DOMContentLoaded", () => {
             filtered = contacts.filter(c => c.is_group);
         }
 
-        // Search Filter
+        // Search Filter: matches name, phone number, formatted phone number, or JID
         const query = chatSearch.value.toLowerCase().trim();
         if (query) {
             filtered = filtered.filter(c => {
                 const name = (c.name || "").toLowerCase();
                 const jid = (c.jid || "").toLowerCase();
-                return name.includes(query) || jid.includes(query);
+                const phone = (c.phone_number || "").toLowerCase();
+                const formatted = formatPhoneNumber(c.phone_number || c.jid).toLowerCase();
+                return name.includes(query) || jid.includes(query) || phone.includes(query) || formatted.includes(query);
             });
         }
 
@@ -944,7 +1037,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const item = document.createElement("div");
             item.className = `contact-item ${isMatchingChat(c.jid, activeContactJid) ? 'active' : ''}`;
             
-            const initials = c.name ? c.name.substring(0, 2).toUpperCase() : "WA";
+            const displayName = getChatDisplayName(c);
+            const initials = getChatInitials(c, displayName);
             const avatarClass = c.is_group ? "contact-avatar group-avatar" : "contact-avatar";
 
             let timeStr = "";
@@ -963,7 +1057,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="${avatarClass}">${initials}</div>
                 <div class="contact-info">
                     <div class="contact-info-row">
-                        <span class="contact-name">${escapeHTML(c.name || c.jid.split('@')[0])}</span>
+                        <span class="contact-name">${escapeHTML(displayName)}</span>
                         <span class="contact-time">${timeStr}</span>
                     </div>
                     <div class="contact-preview">
@@ -987,10 +1081,21 @@ document.addEventListener("DOMContentLoaded", () => {
         
         applyFiltersAndRender();
 
-        chatContactName.innerText = contact.name || contact.jid.split('@')[0];
-        chatContactJid.innerText = contact.is_group ? contact.jid : formatDisplayJid(contact.jid);
+        const displayName = getChatDisplayName(contact);
+        chatContactName.innerText = displayName;
+
+        if (contact.is_group) {
+            chatContactJid.innerText = "WhatsApp Group";
+        } else if (isProperName(contact.name)) {
+            // Contact has a saved name: show phone number as subtitle!
+            const phone = contact.phone_number || (contact.jid && !contact.jid.includes('@lid') ? contact.jid.split('@')[0] : '');
+            chatContactJid.innerText = phone ? formatPhoneNumber(phone) : "";
+        } else {
+            // Unsaved / new number: title is already the phone number, show subtitle as WhatsApp Contact
+            chatContactJid.innerText = "WhatsApp Contact";
+        }
         
-        const initials = contact.name ? contact.name.substring(0, 2).toUpperCase() : "WA";
+        const initials = getChatInitials(contact, displayName);
         chatAvatar.innerText = initials;
         chatAvatar.className = contact.is_group ? "avatar group-avatar" : "avatar";
 
@@ -1066,7 +1171,23 @@ document.addEventListener("DOMContentLoaded", () => {
         // In group chats, display participant name for incoming messages
         let headerLabel = "";
         if (!isOut && isGroup) {
-            const displayName = msg.sender_name || (msg.sender ? msg.sender.split('@')[0] : 'Member');
+            let displayName = "";
+            const senderJid = msg.sender || "";
+            const cleanSender = senderJid.split('@')[0];
+            // Try matching in loaded contacts
+            const matchedContact = contacts.find(c => 
+                isMatchingChat(c.jid, senderJid) || 
+                (c.phone_number && (c.phone_number === cleanSender || senderJid.includes(c.phone_number)))
+            );
+            if (matchedContact && isProperName(matchedContact.name)) {
+                displayName = matchedContact.name;
+            } else if (isProperName(msg.sender_name)) {
+                displayName = msg.sender_name;
+            } else {
+                // New number: show formatted phone number!
+                const rawNum = matchedContact?.phone_number || (senderJid && !senderJid.includes('@lid') ? cleanSender : '');
+                displayName = rawNum ? formatPhoneNumber(rawNum) : (senderJid ? formatDisplayJid(senderJid) : 'Participant');
+            }
             headerLabel = `<span class="message-group-sender">${escapeHTML(displayName)}</span>`;
         }
 
@@ -1403,8 +1524,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function formatDisplayJid(jid) {
         if (!jid) return "";
-        if (jid.endsWith("@g.us")) return jid;
-        return jid.split("@")[0] || jid;
+        if (jid.endsWith("@g.us")) return "WhatsApp Group";
+        if (jid.includes("@lid")) {
+            const matched = contacts.find(c => c.jid === jid || c.alt_jid === jid);
+            if (matched?.phone_number) {
+                return formatPhoneNumber(matched.phone_number);
+            }
+            return "WhatsApp Contact";
+        }
+        return formatPhoneNumber(jid);
     }
 
     function escapeHTML(str) {

@@ -54,3 +54,6 @@ whatsapp_outbox.processing
 *.sublime-workspace
 .DS_Store
 Thumbs.db
+
+# Downloaded WhatsApp media
+static/media/

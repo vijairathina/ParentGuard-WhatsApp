@@ -18,6 +18,19 @@ from neonize.utils.jid import build_jid
 ACCOUNTS_FILE = "accounts/accounts.json"
 _lock = threading.Lock()
 
+def is_valid_name(name: Any) -> bool:
+    """Returns True if the string is a valid human-readable name (not empty, not dots, not raw digits/LIDs)."""
+    if not name or not isinstance(name, str):
+        return False
+    name = name.strip()
+    if not name or name in ('.', '..', '-', 'WA', 'Unknown', 'null', 'None', 'Member'):
+        return False
+    import re
+    clean = re.sub(r'[@\s\-\+\(\)\.]', '', name)
+    if clean.isdigit() or (name.endswith('@lid') and name[:-4].isdigit()):
+        return False
+    return True
+
 class WhatsAppManager:
     def __init__(self):
         self.clients: Dict[str, NewClient] = {}
@@ -315,29 +328,58 @@ class WhatsAppManager:
         return True
 
     def load_contacts_from_db(self, account_id: str) -> List[Dict[str, Any]]:
-        """Reads contacts from whatsmeow_contacts SQLite table (contains all user contacts)."""
+        """Reads contacts from whatsmeow_contacts SQLite table and maps LIDs to phone numbers."""
         db_path = f"accounts/{account_id}.db"
         if not os.path.exists(db_path):
             return []
         import sqlite3
+        import re
         db_contacts = []
         try:
-            conn = sqlite3.connect(db_path, timeout=5)
+            lid_map = self.load_lid_map(account_id)
+            lid_to_pn = lid_map.get("lid_to_pn", {})
+            pn_to_lid = lid_map.get("pn_to_lid", {})
+
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
             c = conn.cursor()
             c.execute("SELECT their_jid, first_name, full_name, push_name, business_name FROM whatsmeow_contacts")
+            
+            raw_entries = {}
             for row in c.fetchall():
                 jid, fn, full, push, biz = row
-                name = (full or push or fn or biz or "").strip()
-                if not name and jid:
-                    name = jid.split("@")[0]
-                if jid and name:
-                    db_contacts.append({
-                        "jid": str(jid),
-                        "name": str(name),
-                        "is_group": False,
-                        "timestamp": 0
-                    })
+                jid_str = str(jid).strip() if jid else ""
+                if not jid_str:
+                    continue
+                # Pick best human name
+                name = ""
+                for candidate in [full, biz, push, fn]:
+                    if is_valid_name(candidate):
+                        name = str(candidate).strip()
+                        break
+                raw_entries[jid_str] = name
             conn.close()
+
+            # Cross-populate names between LID and Phone entries
+            for lid, pn in lid_to_pn.items():
+                lid_jid = f"{lid}@lid"
+                pn_jid = f"{pn}@s.whatsapp.net"
+                best_name = raw_entries.get(pn_jid) or raw_entries.get(lid_jid) or ""
+                if best_name:
+                    if not raw_entries.get(lid_jid):
+                        raw_entries[lid_jid] = best_name
+                    if not raw_entries.get(pn_jid):
+                        raw_entries[pn_jid] = best_name
+
+            for jid_str, name in raw_entries.items():
+                clean_user = jid_str.split("@")[0]
+                pn = lid_to_pn.get(clean_user) if "@lid" in jid_str else (clean_user if clean_user.isdigit() and len(clean_user) <= 15 else "")
+                db_contacts.append({
+                    "jid": jid_str,
+                    "name": name,
+                    "phone_number": pn or "",
+                    "is_group": False,
+                    "timestamp": 0
+                })
         except Exception as e:
             print(f"[Manager][{account_id}] SQLite contact query error: {e}")
         return db_contacts
@@ -455,7 +497,8 @@ class WhatsAppManager:
 
                             from_me = getattr(key, 'fromMe', False)
                             ts = int(getattr(wmi, 'messageTimestamp', 0))
-                            push_name = getattr(wmi, 'pushName', '') or ("Me" if from_me else cjid.split('@')[0])
+                            raw_p = getattr(wmi, 'pushName', '') or ""
+                            push_name = "Me" if from_me else (raw_p.strip() if is_valid_name(raw_p) else "")
                             sender = getattr(key, 'participant', '') or (cjid if not from_me else "Me")
 
                             inner_msg = getattr(wmi, 'message', None)
@@ -826,7 +869,8 @@ class WhatsAppManager:
                 chat_jid = sender
 
             # Pushname
-            push_name = getattr(info, 'Pushname', "") or getattr(info, 'PushName', "") or sender
+            raw_push = getattr(info, 'Pushname', "") or getattr(info, 'PushName', "") or ""
+            push_name = raw_push.strip() if is_valid_name(raw_push) else ""
             
             # Message body and attachments: Look on message_ev FIRST!
             msg = getattr(message_ev, 'Message', None) or getattr(message_ev, 'message', None) or getattr(message_ev, 'Raw', None)
@@ -912,6 +956,16 @@ class WhatsAppManager:
 
             if is_outgoing:
                 push_name = "Me"
+            elif not push_name:
+                # Look up saved contact name
+                sender_u = sender.split("@")[0] if "@" in sender else sender
+                lid_m = self.load_lid_map(account_id)
+                pn = lid_m.get("lid_to_pn", {}).get(sender_u, "") or (sender_u if sender_u.isdigit() and len(sender_u) <= 15 else "")
+                cached_contacts = self.get_contacts(account_id)
+                for c in cached_contacts:
+                    if is_valid_name(c.get("name")) and (c["jid"] == sender or (pn and c.get("phone_number") == pn)):
+                        push_name = c["name"]
+                        break
 
             # Create message structure
             # Neonize Timestamp may be in milliseconds — normalize to seconds
@@ -1038,7 +1092,7 @@ class WhatsAppManager:
             except Exception as e:
                 print(f"[Manager] Error saving history: {e}")
 
-    def save_contact(self, account_id: str, jid: str, name: str, is_group: bool = False):
+    def save_contact(self, account_id: str, jid: str, name: str, is_group: bool = False, phone_number: str = ""):
         CONTACTS_FILE = f"accounts/contacts_{account_id}.json"
         with _lock:
             contacts = []
@@ -1049,11 +1103,22 @@ class WhatsAppManager:
                 except:
                     pass
             
+            clean_name = name.strip() if name and is_valid_name(name) else ""
+            if not phone_number:
+                lid_map = self.load_lid_map(account_id)
+                clean_u = jid.split("@")[0] if "@" in jid else jid
+                phone_number = lid_map.get("lid_to_pn", {}).get(clean_u, "") or (clean_u if clean_u.isdigit() and len(clean_u) <= 15 and not "@lid" in jid else "")
+
             # Update or insert
             found = False
             for c in contacts:
                 if c["jid"] == jid:
-                    c["name"] = name
+                    if clean_name:
+                        c["name"] = clean_name
+                    elif not is_valid_name(c.get("name")):
+                        c["name"] = ""
+                    if phone_number and not c.get("phone_number"):
+                        c["phone_number"] = phone_number
                     c["timestamp"] = int(time.time())
                     found = True
                     break
@@ -1061,7 +1126,8 @@ class WhatsAppManager:
             if not found:
                 contacts.append({
                     "jid": jid,
-                    "name": name,
+                    "name": clean_name,
+                    "phone_number": phone_number,
                     "is_group": is_group,
                     "timestamp": int(time.time())
                 })
@@ -1098,8 +1164,10 @@ class WhatsAppManager:
             if jid not in contacts_map:
                 contacts_map[jid] = c
             else:
-                if c.get("name") and not contacts_map[jid].get("name"):
+                if c.get("name") and is_valid_name(c["name"]) and not is_valid_name(contacts_map[jid].get("name")):
                     contacts_map[jid]["name"] = c["name"]
+                if c.get("phone_number") and not contacts_map[jid].get("phone_number"):
+                    contacts_map[jid]["phone_number"] = c["phone_number"]
 
         # 3. Joined Groups
         if os.path.exists(GROUPS_FILE):
@@ -1107,17 +1175,18 @@ class WhatsAppManager:
                 with open(GROUPS_FILE, "r", encoding="utf-8") as f:
                     for g in json.load(f):
                         jid = g["jid"]
+                        g_name = g.get("name", "") if is_valid_name(g.get("name")) else ""
                         if jid not in contacts_map:
                             contacts_map[jid] = {
                                 "jid": jid,
-                                "name": g["name"],
+                                "name": g_name,
                                 "is_group": True,
                                 "timestamp": 0
                             }
                         else:
                             contacts_map[jid]["is_group"] = True
-                            if g.get("name"):
-                                contacts_map[jid]["name"] = g["name"]
+                            if g_name:
+                                contacts_map[jid]["name"] = g_name
             except:
                 pass
 
@@ -1131,7 +1200,7 @@ class WhatsAppManager:
                 with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                     history = json.load(f)
                     for chat_jid, msgs in history.items():
-                        if not msgs:
+                        if not msgs or chat_jid == "status@broadcast":
                             continue
                         last_m = msgs[-1]
                         last_ts = last_m.get("timestamp", 0)
@@ -1155,12 +1224,14 @@ class WhatsAppManager:
 
                         # Match with contacts_map via exact JID, LID-to-phone, or local user
                         clean_user = chat_jid.split("@")[0] if "@" in chat_jid else chat_jid
+                        pn = lid_to_pn.get(clean_user, "") or (clean_user if clean_user.isdigit() and len(clean_user) <= 15 and not "@lid" in chat_jid else "")
+
                         target_key = None
                         if chat_jid in contacts_map:
                             target_key = chat_jid
                         elif clean_user in lid_to_pn:
-                            pn = lid_to_pn[clean_user]
-                            for alt in [f"{pn}@s.whatsapp.net", f"{pn}@c.us", pn]:
+                            p_num = lid_to_pn[clean_user]
+                            for alt in [f"{p_num}@s.whatsapp.net", f"{p_num}@c.us", p_num]:
                                 if alt in contacts_map:
                                     target_key = alt
                                     break
@@ -1175,31 +1246,65 @@ class WhatsAppManager:
                                     target_key = c_k
                                     break
 
+                        # Extract any valid human sender_name from recent history messages
+                        hist_sender_name = ""
+                        for m in reversed(msgs):
+                            s_name = m.get("sender_name")
+                            if is_valid_name(s_name) and s_name != "Me":
+                                hist_sender_name = s_name.strip()
+                                break
+
+                        is_group = chat_jid.endswith("@g.us")
                         if target_key:
-                            contacts_map[target_key]["timestamp"] = max(contacts_map[target_key].get("timestamp", 0), last_ts)
-                            contacts_map[target_key]["last_message"] = last_body
+                            existing = contacts_map[target_key]
+                            existing["timestamp"] = max(existing.get("timestamp", 0), last_ts)
+                            existing["last_message"] = last_body
+                            if pn and not existing.get("phone_number"):
+                                existing["phone_number"] = pn
+                            # Update name if current name is invalid or missing
+                            if not is_valid_name(existing.get("name")):
+                                if hist_sender_name:
+                                    existing["name"] = hist_sender_name
+                                else:
+                                    existing["name"] = ""
+                            if target_key != chat_jid:
+                                existing["alt_jid"] = chat_jid
                         else:
-                            is_group = chat_jid.endswith("@g.us")
-                            c_name = lid_to_pn.get(clean_user, clean_user) if not is_group else clean_user
+                            c_name = hist_sender_name if not is_group else ""
                             contacts_map[chat_jid] = {
                                 "jid": chat_jid,
                                 "name": c_name,
+                                "phone_number": pn,
                                 "is_group": is_group,
                                 "timestamp": last_ts,
                                 "last_message": last_body
                             }
-            except:
-                pass
+            except Exception as e:
+                print(f"[Manager] Error in merge_contacts_groups: {e}")
 
         with _lock:
             # Active chats with messages appear first (sorted by newest message timestamp)
-            active_chats = [c for c in contacts_map.values() if c.get("timestamp", 0) > 0]
-            inactive_chats = [c for c in contacts_map.values() if c.get("timestamp", 0) == 0]
+            active_chats = [c for c in contacts_map.values() if c.get("timestamp", 0) > 0 and c.get("jid") != "status@broadcast"]
+            inactive_chats = [c for c in contacts_map.values() if c.get("timestamp", 0) == 0 and c.get("jid") != "status@broadcast"]
+
+            # Filter out inactive duplicate entries if an active chat already exists for that contact
+            active_phones = {c.get("phone_number") for c in active_chats if c.get("phone_number")}
+            active_clean_users = {c["jid"].split("@")[0] for c in active_chats}
+
+            deduped_inactive = []
+            for c in inactive_chats:
+                pn = c.get("phone_number")
+                cu = c["jid"].split("@")[0]
+                if pn and pn in active_phones:
+                    continue
+                if cu in active_clean_users:
+                    continue
+                deduped_inactive.append(c)
 
             active_chats.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-            inactive_chats.sort(key=lambda x: str(x.get("name", "")).lower())
+            deduped_inactive.sort(key=lambda x: str(x.get("name", "")).lower())
 
-            merged = active_chats + inactive_chats
+            merged = active_chats + deduped_inactive
             try:
                 with open(CONTACTS_FILE, "w", encoding="utf-8") as f:
                     json.dump(merged, f, indent=2)
