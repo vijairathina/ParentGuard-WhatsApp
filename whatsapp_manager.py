@@ -444,46 +444,57 @@ class WhatsAppManager:
                     existing_ids = {m.get("id") for m in history[cjid]}
                     msgs = getattr(conv, 'messages', [])
                     for m_item in msgs:
-                        wmi = getattr(m_item, 'message', None)
-                        if not wmi:
+                        try:
+                            wmi = getattr(m_item, 'message', None)
+                            if not wmi:
+                                continue
+                            key = getattr(wmi, 'key', None)
+                            msg_id = getattr(key, 'ID', '') or getattr(key, 'id', '')
+                            if not msg_id or msg_id in existing_ids:
+                                continue
+
+                            from_me = getattr(key, 'fromMe', False)
+                            ts = int(getattr(wmi, 'messageTimestamp', 0))
+                            push_name = getattr(wmi, 'pushName', '') or ("Me" if from_me else cjid.split('@')[0])
+                            sender = getattr(key, 'participant', '') or (cjid if not from_me else "Me")
+
+                            inner_msg = getattr(wmi, 'message', None)
+                            text = ""
+                            attachment = None
+                            if inner_msg:
+                                attachment = self._extract_attachment(inner_msg)
+                                if hasattr(inner_msg, 'conversation') and inner_msg.conversation:
+                                    text = inner_msg.conversation
+                                elif hasattr(inner_msg, 'extendedTextMessage') and inner_msg.extendedTextMessage:
+                                    text = getattr(inner_msg.extendedTextMessage, 'text', "")
+                                elif hasattr(inner_msg, 'documentWithCaptionMessage') and inner_msg.documentWithCaptionMessage:
+                                    dm = getattr(inner_msg.documentWithCaptionMessage, 'message', None)
+                                    if dm and hasattr(dm, 'documentMessage'):
+                                        text = getattr(dm.documentMessage, 'caption', "")
+
+                                if not text and attachment:
+                                    text = attachment.get("caption") or f"[{attachment.get('type', 'attachment')}]"
+
+                            if not text and not attachment:
+                                continue
+
+                            msg_data = {
+                                "id": str(msg_id),
+                                "sender": sender,
+                                "sender_name": push_name,
+                                "chat_jid": cjid,
+                                "body": text,
+                                "timestamp": ts,
+                                "is_outgoing": from_me
+                            }
+                            if attachment:
+                                msg_data["attachment"] = attachment
+
+                            history[cjid].append(msg_data)
+                            existing_ids.add(msg_id)
+                            new_count += 1
+                        except Exception:
                             continue
-                        key = getattr(wmi, 'key', None)
-                        msg_id = getattr(key, 'ID', '') or getattr(key, 'id', '')
-                        if not msg_id or msg_id in existing_ids:
-                            continue
-
-                        from_me = getattr(key, 'fromMe', False)
-                        ts = int(getattr(wmi, 'messageTimestamp', 0))
-                        push_name = getattr(wmi, 'pushName', '') or ("Me" if from_me else cjid.split('@')[0])
-                        sender = getattr(key, 'participant', '') or (cjid if not from_me else "Me")
-
-                        inner_msg = getattr(wmi, 'message', None)
-                        text = ""
-                        attachment = None
-                        if inner_msg:
-                            attachment = self._extract_attachment(inner_msg)
-                            if hasattr(inner_msg, 'conversation') and inner_msg.conversation:
-                                text = inner_msg.conversation
-                            elif hasattr(inner_msg, 'extendedTextMessage') and inner_msg.extendedTextMessage:
-                                text = getattr(inner_msg.extendedTextMessage, 'text', "")
-                            if not text and attachment:
-                                text = attachment.get("caption") or f"[{attachment.get('type', 'attachment')}]"
-
-                        msg_data = {
-                            "id": str(msg_id),
-                            "sender": sender,
-                            "sender_name": push_name,
-                            "chat_jid": cjid,
-                            "body": text,
-                            "timestamp": ts,
-                            "is_outgoing": from_me
-                        }
-                        if attachment:
-                            msg_data["attachment"] = attachment
-
-                        history[cjid].append(msg_data)
-                        existing_ids.add(msg_id)
-                        new_count += 1
 
                     history[cjid] = sorted(history[cjid], key=lambda x: x.get("timestamp", 0))[-150:]
 
@@ -646,23 +657,41 @@ class WhatsAppManager:
         if not msg:
             return None
 
-        # Unwrap common wrapper fields (message, Message, raw, Raw)
-        if not hasattr(msg, "WhichOneof"):
-            for wrapper in ("message", "Message", "raw", "Raw"):
-                if hasattr(msg, wrapper):
-                    try:
-                        msg = getattr(msg, wrapper)
+        # Unwrap common wrapper fields
+        if hasattr(msg, "Message") and getattr(msg, "Message", None):
+            inner = getattr(msg, "Message")
+            if inner and not isinstance(inner, str):
+                msg = inner
+        elif hasattr(msg, "message") and getattr(msg, "message", None):
+            inner = getattr(msg, "message")
+            if inner and not isinstance(inner, str):
+                msg = inner
+
+        # Determine which attachment field is present safely without WhichOneof
+        message_type = None
+        for candidate in ("imageMessage", "videoMessage", "documentMessage", "audioMessage", "stickerMessage"):
+            try:
+                if hasattr(msg, "HasField") and msg.HasField(candidate):
+                    message_type = candidate
+                    break
+                elif hasattr(msg, candidate) and getattr(msg, candidate, None):
+                    sub = getattr(msg, candidate)
+                    if hasattr(sub, "ByteSize") and sub.ByteSize() > 0:
+                        message_type = candidate
                         break
-                    except Exception:
-                        pass
+            except Exception:
+                pass
 
-        if not hasattr(msg, "WhichOneof"):
-            return None
+        if not message_type:
+            try:
+                if hasattr(msg, "HasField") and msg.HasField("documentWithCaptionMessage"):
+                    sub_m = getattr(msg.documentWithCaptionMessage, "message", None)
+                    if sub_m and hasattr(sub_m, "HasField") and sub_m.HasField("documentMessage"):
+                        msg = sub_m
+                        message_type = "documentMessage"
+            except Exception:
+                pass
 
-        if not hasattr(msg, "WhichOneof"):
-            return None
-
-        message_type = msg.WhichOneof("message")
         if not message_type:
             return None
 
@@ -685,58 +714,62 @@ class WhatsAppManager:
             except Exception:
                 return None
 
-        if message_type == "imageMessage":
-            image = msg.imageMessage
-            attachment.update({
-                "mime_type": getattr(image, "mimetype", "") or "",
-                "url": getattr(image, "URL", "") or getattr(image, "url", "") or "",
-                "direct_path": getattr(image, "directPath", "") or "",
-                "caption": getattr(image, "caption", "") or ""
-            })
-            attachment["preview"] = _encode_preview(getattr(image, "JPEGThumbnail", None), "jpeg")
-        elif message_type == "videoMessage":
-            video = msg.videoMessage
-            attachment.update({
-                "mime_type": getattr(video, "mimetype", "") or "",
-                "url": getattr(video, "URL", "") or getattr(video, "url", "") or "",
-                "direct_path": getattr(video, "directPath", "") or "",
-                "caption": getattr(video, "caption", "") or "",
-                "duration": getattr(video, "seconds", None)
-            })
-            attachment["preview"] = _encode_preview(getattr(video, "JPEGThumbnail", None), "jpeg")
-        elif message_type == "documentMessage":
-            document = msg.documentMessage
-            attachment.update({
-                "mime_type": getattr(document, "mimetype", "") or "",
-                "url": getattr(document, "URL", "") or getattr(document, "url", "") or "",
-                "direct_path": getattr(document, "directPath", "") or "",
-                "file_name": getattr(document, "fileName", "") or getattr(document, "title", "") or "",
-                "caption": getattr(document, "caption", "") or ""
-            })
-            attachment["preview"] = _encode_preview(getattr(document, "JPEGThumbnail", None), "jpeg")
-        elif message_type == "audioMessage":
-            audio = msg.audioMessage
-            attachment.update({
-                "mime_type": getattr(audio, "mimetype", "") or "",
-                "url": getattr(audio, "URL", "") or getattr(audio, "url", "") or "",
-                "direct_path": getattr(audio, "directPath", "") or "",
-                "duration": getattr(audio, "seconds", None)
-            })
-        elif message_type == "stickerMessage":
-            sticker = msg.stickerMessage
-            attachment.update({
-                "mime_type": getattr(sticker, "mimetype", "") or "",
-                "url": getattr(sticker, "URL", "") or getattr(sticker, "url", "") or "",
-                "direct_path": getattr(sticker, "directPath", "") or "",
-                "file_name": "sticker"
-            })
-            attachment["preview"] = _encode_preview(getattr(sticker, "pngThumbnail", None), "png")
+        try:
+            if message_type == "imageMessage":
+                image = getattr(msg, "imageMessage", None)
+                if image:
+                    attachment.update({
+                        "mime_type": getattr(image, "mimetype", "") or "",
+                        "url": getattr(image, "URL", "") or getattr(image, "url", "") or "",
+                        "direct_path": getattr(image, "directPath", "") or "",
+                        "caption": getattr(image, "caption", "") or ""
+                    })
+                    attachment["preview"] = _encode_preview(getattr(image, "JPEGThumbnail", None), "jpeg")
+            elif message_type == "videoMessage":
+                video = getattr(msg, "videoMessage", None)
+                if video:
+                    attachment.update({
+                        "mime_type": getattr(video, "mimetype", "") or "",
+                        "url": getattr(video, "URL", "") or getattr(video, "url", "") or "",
+                        "direct_path": getattr(video, "directPath", "") or "",
+                        "caption": getattr(video, "caption", "") or "",
+                        "duration": getattr(video, "seconds", None)
+                    })
+                    attachment["preview"] = _encode_preview(getattr(video, "JPEGThumbnail", None), "jpeg")
+            elif message_type == "documentMessage":
+                document = getattr(msg, "documentMessage", None)
+                if document:
+                    attachment.update({
+                        "mime_type": getattr(document, "mimetype", "") or "",
+                        "url": getattr(document, "URL", "") or getattr(document, "url", "") or "",
+                        "direct_path": getattr(document, "directPath", "") or "",
+                        "file_name": getattr(document, "fileName", "") or getattr(document, "title", "") or "",
+                        "caption": getattr(document, "caption", "") or ""
+                    })
+                    attachment["preview"] = _encode_preview(getattr(document, "JPEGThumbnail", None), "jpeg")
+            elif message_type == "audioMessage":
+                audio = getattr(msg, "audioMessage", None)
+                if audio:
+                    attachment.update({
+                        "mime_type": getattr(audio, "mimetype", "") or "",
+                        "url": getattr(audio, "URL", "") or getattr(audio, "url", "") or "",
+                        "direct_path": getattr(audio, "directPath", "") or "",
+                        "duration": getattr(audio, "seconds", None)
+                    })
+            elif message_type == "stickerMessage":
+                sticker = getattr(msg, "stickerMessage", None)
+                if sticker:
+                    attachment.update({
+                        "mime_type": getattr(sticker, "mimetype", "") or "",
+                        "url": getattr(sticker, "URL", "") or getattr(sticker, "url", "") or "",
+                        "direct_path": getattr(sticker, "directPath", "") or "",
+                        "file_name": "sticker"
+                    })
+                    attachment["preview"] = _encode_preview(getattr(sticker, "pngThumbnail", None), "png")
+        except Exception as e:
+            print(f"[Manager] Error extracting attachment properties: {e}")
 
-        # Make attachment payload more compact if useful fields exist
-        if attachment["caption"] or attachment["url"] or attachment["preview"] or attachment["file_name"] or attachment["duration"]:
-            return attachment
-
-        return None
+        return attachment
 
     def handle_incoming_message(self, account_id: str, message_ev: Any):
         client = self.clients.get(account_id)
@@ -814,7 +847,7 @@ class WhatsAppManager:
                         msg = obj
                         break
 
-            # Check for Revoke (Deleted Message)
+            # Check for Revoke or other protocol messages
             if msg and hasattr(msg, 'protocolMessage') and msg.protocolMessage:
                 pm = msg.protocolMessage
                 is_revoke = False
@@ -832,6 +865,9 @@ class WhatsAppManager:
                         print(f"[Anti-Delete][{account_id}] Detected message revoke for ID {target_id} in {remote_jid}")
                         self.handle_message_revoke(account_id, remote_jid, target_id, sender)
                         return
+                else:
+                    # Non-chat protocol message (e.g. HISTORY_SYNC_NOTIFICATION, PEER_BROADCAST) — do not save as chat
+                    return
 
             attachment = self._extract_attachment(msg)
             text = ""
@@ -853,6 +889,9 @@ class WhatsAppManager:
                     text = "[" + att_type[:1].upper() + att_type[1:] + "]"
                 else:
                     text = ""
+
+            if not text and not attachment:
+                return
 
             print(f"[Manager][{account_id}] Live message from {sender} ({push_name}) in {chat_jid}: '{text[:45]}'")
 
