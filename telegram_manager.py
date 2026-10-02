@@ -12,7 +12,13 @@ import json
 import time
 import asyncio
 import threading
+import logging
 from typing import Dict, List, Any, Optional
+
+# Silence noisy Telethon libssl lookup messages on Windows
+logging.getLogger('telethon.crypto.libssl').setLevel(logging.ERROR)
+logging.getLogger('telethon.crypto.aes').setLevel(logging.WARNING)
+
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
 
