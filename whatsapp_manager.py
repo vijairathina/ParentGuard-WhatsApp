@@ -12,7 +12,7 @@ import sys
 from content_monitor import ContentMonitor
 
 from neonize.client import NewClient
-from neonize.events import ConnectedEv, MessageEv, HistorySyncEv
+from neonize.events import ConnectedEv, MessageEv, HistorySyncEv, LoggedOutEv, DisconnectedEv
 from neonize.utils.jid import build_jid
 
 ACCOUNTS_FILE = "accounts/accounts.json"
@@ -259,6 +259,20 @@ class WhatsAppManager:
                 @client.event(MessageEv)
                 def on_message(c, message_ev):
                     self.handle_incoming_message(account_id, message_ev)
+
+                @client.event(LoggedOutEv)
+                def on_logged_out(c, logged_out_ev):
+                    print(f"[Manager][{account_id}] Logged out by WhatsApp (session revoked on mobile device).")
+                    self.statuses[account_id] = "Logged Out"
+                    self.save_accounts()
+                    self.broadcast("status", account_id, {"status": "Logged Out", "reason": "Session logged out from device"})
+
+                @client.event(DisconnectedEv)
+                def on_disconnected(c, disconnected_ev):
+                    print(f"[Manager][{account_id}] Disconnected.")
+                    if self.statuses.get(account_id) != "Logged Out":
+                        self.statuses[account_id] = "Disconnected"
+                    self.broadcast("status", account_id, {"status": self.statuses.get(account_id, "Disconnected")})
 
                 # Connect blocks
                 client.connect()
