@@ -261,6 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.querySelectorAll(".platform-tab-btn").forEach(b => b.classList.remove("active"));
                 btn.classList.add("active");
                 activePlatform = btn.getAttribute("data-platform") || "all";
+                hideQrPane(); // Never show WhatsApp QR pane when navigating to another platform!
                 renderAccountsDropdown();
                 const available = getFilteredAccounts();
                 if (available.length > 0 && !available.some(a => a.id === activeAccountId)) {
@@ -274,6 +275,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     const emptyBtn = document.getElementById("btn-empty-plat-add");
                     if (emptyBtn) emptyBtn.addEventListener("click", () => openAddAccountModalForPlatform(activePlatform));
                     hideChatWindow();
+                } else {
+                    handleAccountSelectionChange();
                 }
             });
         });
@@ -303,6 +306,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const btnTgSendOtp = document.getElementById("btn-tg-send-otp");
         const btnTgChangePhone = document.getElementById("btn-tg-change-phone");
         const btnTgVerifyOtp = document.getElementById("btn-tg-verify-otp");
+        const btnTgResendSms = document.getElementById("btn-tg-resend-sms");
 
         if (btnTgSendOtp) btnTgSendOtp.addEventListener("click", handleTelegramSendOtp);
         if (btnTgChangePhone) btnTgChangePhone.addEventListener("click", () => {
@@ -311,6 +315,7 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("tg-status-feedback").style.display = "none";
         });
         if (btnTgVerifyOtp) btnTgVerifyOtp.addEventListener("click", handleTelegramVerifyOtp);
+        if (btnTgResendSms) btnTgResendSms.addEventListener("click", handleTelegramResendSms);
 
         // Instagram Login Handlers
         const btnIgLogin = document.getElementById("btn-ig-login");
@@ -388,14 +393,29 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (btnBannerReconnect) {
             btnBannerReconnect.addEventListener("click", () => {
-                showQrPane(true);
+                const acc = accounts.find(a => a.id === activeAccountId);
+                const platform = getAccountPlatform(acc);
+                if (platform === "whatsapp") {
+                    showQrPane(true);
+                } else if (platform === "telegram") {
+                    openAddAccountModalForPlatform("telegram");
+                } else if (platform === "instagram") {
+                    openAddAccountModalForPlatform("instagram");
+                }
             });
         }
         if (accountStatusIndicator) {
             accountStatusIndicator.addEventListener("click", () => {
                 const acc = accounts.find(a => a.id === activeAccountId);
                 if (acc && acc.status !== "Connected") {
-                    showQrPane(true);
+                    const platform = getAccountPlatform(acc);
+                    if (platform === "whatsapp") {
+                        showQrPane(true);
+                    } else if (platform === "telegram") {
+                        openAddAccountModalForPlatform("telegram");
+                    } else if (platform === "instagram") {
+                        openAddAccountModalForPlatform("instagram");
+                    }
                 }
             });
         }
@@ -646,10 +666,17 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
+    function getAccountPlatform(acc) {
+        if (!acc) return "whatsapp";
+        if (acc.platform) return acc.platform.toLowerCase();
+        if (acc.id && acc.id.startsWith("acc_tg_")) return "telegram";
+        if (acc.id && acc.id.startsWith("acc_ig_")) return "instagram";
+        return "whatsapp";
+    }
+
     function getFilteredAccounts() {
         if (activePlatform === "all") return accounts;
-        if (activePlatform === "whatsapp") return accounts.filter(a => a.platform === "whatsapp" || !a.platform);
-        return accounts.filter(a => a.platform === activePlatform);
+        return accounts.filter(a => getAccountPlatform(a) === activePlatform);
     }
 
     async function loadPlatformCounts() {
@@ -753,22 +780,32 @@ document.addEventListener("DOMContentLoaded", () => {
             const name = activeAcc.name || "PG";
             activeAvatar.innerText = name.substring(0, 2).toUpperCase();
             
+            const platform = getAccountPlatform(activeAcc);
             const isConnected = activeAcc.status === "Connected";
             if (accountStatusIndicator) {
                 accountStatusIndicator.className = `account-status-badge ${isConnected ? 'status-connected' : 'status-reconnect'}`;
-                accountStatusIndicator.title = isConnected ? "Session Connected" : "Click to view QR code and reconnect";
+                accountStatusIndicator.title = isConnected ? "Session Connected" : (platform === "whatsapp" ? "Click to view QR code and reconnect" : "Click to reconnect account");
                 accountStatusIndicator.innerHTML = isConnected 
                     ? `<span class="status-dot online"></span> Connected`
-                    : `<span class="status-dot warning"></span> ⚡ ${escapeHTML(activeAcc.status)} (Scan QR)`;
+                    : `<span class="status-dot warning"></span> ⚡ ${escapeHTML(activeAcc.status)} ${platform === "whatsapp" ? "(Scan QR)" : "(Reconnect)"}`;
             }
 
             // Keep chat list on left side intact! Never wipe contactsList!
             // Update right pane depending on session status:
             if (!isConnected) {
-                if (!activeContactJid) {
-                    showQrPane(false);
-                } else if (sessionNoticeBanner) {
-                    sessionNoticeBanner.style.display = "flex";
+                if (platform === "whatsapp" && activePlatform !== "telegram" && activePlatform !== "instagram") {
+                    if (!activeContactJid) {
+                        showQrPane(false);
+                    } else if (sessionNoticeBanner) {
+                        sessionNoticeBanner.style.display = "flex";
+                    }
+                } else {
+                    hideQrPane();
+                    if (!activeContactJid) {
+                        emptyState.style.display = "flex";
+                    } else if (sessionNoticeBanner) {
+                        sessionNoticeBanner.style.display = "flex";
+                    }
                 }
             } else {
                 hideQrPane();
@@ -782,11 +819,32 @@ document.addEventListener("DOMContentLoaded", () => {
                 accountStatusIndicator.className = "account-status-badge";
                 accountStatusIndicator.innerHTML = "";
             }
+            hideQrPane();
         }
     }
 
     function showQrPane(triggerReconnect = true) {
-        if (!activeAccountId) return;
+        if (!activeAccountId) {
+            hideQrPane();
+            return;
+        }
+        const acc = accounts.find(a => a.id === activeAccountId);
+        if (!acc) {
+            hideQrPane();
+            return;
+        }
+        const platform = getAccountPlatform(acc);
+        // QR Code is strictly for WhatsApp! Never show for Telegram or Instagram!
+        if (platform !== "whatsapp" || activePlatform === "telegram" || activePlatform === "instagram") {
+            hideQrPane();
+            return;
+        }
+        // If WhatsApp is already connected, hide QR
+        if (acc.status === "Connected") {
+            hideQrPane();
+            return;
+        }
+
         emptyState.style.display = "none";
         chatWindow.style.display = "none";
         if (qrPane) qrPane.style.display = "flex";
@@ -794,8 +852,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (qrPaneLoading) qrPaneLoading.style.display = "flex";
         if (qrPaneImage) qrPaneImage.style.display = "none";
 
-        const acc = accounts.find(a => a.id === activeAccountId);
-        if (acc && acc.qr) {
+        if (acc.qr) {
             if (qrPaneImage) {
                 qrPaneImage.src = `data:image/png;base64,${acc.qr}`;
                 qrPaneImage.style.display = "block";
@@ -1451,6 +1508,72 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // --- Telegram Authentication (Phone -> OTP Code -> Optional 2FA) ---
+    let tgCountdownTimer = null;
+    let tgCountdownSeconds = 0;
+
+    function startTgResendCountdown(seconds) {
+        if (tgCountdownTimer) clearInterval(tgCountdownTimer);
+        tgCountdownSeconds = Math.max(seconds || 60, 15);
+        
+        const timerText = document.getElementById("tg-resend-timer-text");
+        const countdownEl = document.getElementById("tg-resend-countdown");
+        const resendBtn = document.getElementById("btn-tg-resend-sms");
+
+        if (timerText) timerText.style.display = "inline";
+        if (resendBtn) resendBtn.style.display = "none";
+        if (countdownEl) countdownEl.innerText = tgCountdownSeconds;
+
+        tgCountdownTimer = setInterval(() => {
+            tgCountdownSeconds--;
+            if (countdownEl) countdownEl.innerText = tgCountdownSeconds;
+            if (tgCountdownSeconds <= 0) {
+                clearInterval(tgCountdownTimer);
+                tgCountdownTimer = null;
+                if (timerText) timerText.style.display = "none";
+                if (resendBtn) resendBtn.style.display = "inline-block";
+            }
+        }, 1000);
+    }
+
+    async function handleTelegramResendSms() {
+        const feedback = document.getElementById("tg-status-feedback");
+        const resendBtn = document.getElementById("btn-tg-resend-sms");
+        if (!tgCurrentAccountId) return;
+
+        if (resendBtn) {
+            resendBtn.disabled = true;
+            resendBtn.innerText = "Requesting SMS from Telegram...";
+        }
+
+        try {
+            const res = await fetch("/api/telegram/resend_code", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ account_id: tgCurrentAccountId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                feedback.className = "status-feedback success";
+                feedback.innerText = data.delivery_text || "SMS requested from Telegram. Check your phone's SMS inbox.";
+                feedback.style.display = "block";
+                startTgResendCountdown(data.timeout || 60);
+            } else {
+                feedback.className = "status-feedback error";
+                feedback.innerText = data.error || "Could not resend SMS. Please check your Telegram app.";
+                feedback.style.display = "block";
+            }
+        } catch (err) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Failed to request SMS code.";
+            feedback.style.display = "block";
+        } finally {
+            if (resendBtn) {
+                resendBtn.disabled = false;
+                resendBtn.innerText = "📩 Didn't receive code in app? Send via SMS";
+            }
+        }
+    }
+
     async function handleTelegramSendOtp() {
         const phoneInput = document.getElementById("tg-phone-input");
         const feedback = document.getElementById("tg-status-feedback");
@@ -1479,10 +1602,27 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.success) {
                 tgCurrentAccountId = data.account_id;
                 document.getElementById("tg-sent-phone-display").innerText = phone;
+
+                const titleEl = document.getElementById("tg-delivery-title");
+                const textEl = document.getElementById("tg-delivery-text");
+                const iconEl = document.getElementById("tg-delivery-icon");
+
+                if (data.delivery_type === "sms") {
+                    if (iconEl) iconEl.innerText = "💬";
+                    if (titleEl) titleEl.innerText = "Check Your SMS Messages";
+                    if (textEl) textEl.innerHTML = `Telegram sent a verification code via SMS text message to <strong>${phone}</strong>.`;
+                } else {
+                    if (iconEl) iconEl.innerText = "📲";
+                    if (titleEl) titleEl.innerText = "Check Your Telegram App!";
+                    if (textEl) textEl.innerHTML = `Telegram sent the code to your <strong>Telegram app</strong>. Please open Telegram on your phone or PC and look for the official service chat from <strong>Telegram</strong> (verified checkmark). <em>(Telegram does NOT send SMS if your account is active in an app)</em>.`;
+                }
+
                 document.getElementById("tg-step-phone").style.display = "none";
                 document.getElementById("tg-step-otp").style.display = "block";
                 document.getElementById("tg-otp-input").value = "";
                 document.getElementById("tg-otp-input").focus();
+
+                startTgResendCountdown(data.timeout || 60);
             } else {
                 feedback.className = "status-feedback error";
                 feedback.innerText = data.error || "Failed to send Telegram OTP.";
@@ -1930,9 +2070,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function hideChatWindow() {
         chatWindow.style.display = "none";
         const acc = accounts.find(a => a.id === activeAccountId);
-        if (acc && acc.status !== "Connected") {
+        const platform = getAccountPlatform(acc);
+        if (acc && acc.status !== "Connected" && platform === "whatsapp" && activePlatform !== "telegram" && activePlatform !== "instagram") {
             showQrPane(false);
         } else {
+            hideQrPane();
             emptyState.style.display = "flex";
         }
     }

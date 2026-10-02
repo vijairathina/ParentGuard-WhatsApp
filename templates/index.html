@@ -330,9 +330,19 @@
 
                         <!-- Step 2: OTP & 2FA input (initially hidden) -->
                         <div id="tg-step-otp" style="display: none;">
-                            <div class="otp-notice-box mb-3">
-                                <span>Code sent to <strong id="tg-sent-phone-display"></strong></span>
+                            <div class="otp-notice-box mb-2">
+                                <span>Phone: <strong id="tg-sent-phone-display"></strong></span>
                                 <button type="button" class="btn-text-link" id="btn-tg-change-phone">Change phone</button>
+                            </div>
+
+                            <div class="tg-delivery-alert mb-3" id="tg-delivery-alert">
+                                <div class="tg-alert-icon" id="tg-delivery-icon">📲</div>
+                                <div class="tg-alert-content">
+                                    <div class="tg-alert-title" id="tg-delivery-title">Check Your Telegram App!</div>
+                                    <div class="tg-alert-text" id="tg-delivery-text">
+                                        Telegram delivered the code to your <strong>Telegram app</strong>. Please open Telegram on your phone or PC and look for the chat from <strong>Telegram</strong> (official verified service chat). <em>(Telegram does NOT send SMS if your app is active)</em>.
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="form-group mb-3">
@@ -348,6 +358,13 @@
                             <div class="form-actions mt-3">
                                 <button type="button" class="btn btn-primary w-100" id="btn-tg-verify-otp">
                                     <span>Verify & Connect Telegram</span>
+                                </button>
+                            </div>
+
+                            <div class="tg-resend-row mt-3 text-center">
+                                <span class="text-secondary font-size-sm" id="tg-resend-timer-text">Resend via SMS available in <strong id="tg-resend-countdown">60</strong>s</span>
+                                <button type="button" class="btn-text-link font-size-sm" id="btn-tg-resend-sms" style="display: none;">
+                                    📩 Didn't receive code in app? Send via SMS
                                 </button>
                             </div>
                         </div>

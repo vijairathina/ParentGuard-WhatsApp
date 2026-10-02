@@ -3031,6 +3031,47 @@ input:checked + .slider:before {
     color: var(--text-primary);
 }
 
+.tg-delivery-alert {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: rgba(14, 165, 233, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: left;
+}
+
+.tg-alert-icon {
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.tg-alert-title {
+    font-weight: 700;
+    color: #38bdf8;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+.tg-alert-text {
+    font-size: 12.5px;
+    color: var(--text-primary);
+    line-height: 1.45;
+}
+
+.tg-alert-text strong {
+    color: #7dd3fc;
+}
+
+.tg-resend-row {
+    padding-top: 6px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
 .btn-text-link {
     background: transparent;
     border: none;

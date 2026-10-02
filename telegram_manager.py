@@ -20,6 +20,7 @@ logging.getLogger('telethon.crypto.libssl').setLevel(logging.ERROR)
 logging.getLogger('telethon.crypto.aes').setLevel(logging.WARNING)
 
 from telethon import TelegramClient, events
+from telethon.tl import types, functions
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
 
 # Default Telegram API credentials (official client dev ID/Hash, customizable via ENV)
@@ -102,17 +103,35 @@ class TelegramManager:
                 return {"success": True, "already_authorized": True, "name": name, "phone": phone}
 
             sent = await client.send_code_request(phone)
+            
+            delivery_type = "app"
+            delivery_text = "Code sent to your Telegram App! Open Telegram on your phone or desktop and check the official 'Telegram' service chat."
+            if isinstance(sent.type, types.auth.SentCodeTypeSms):
+                delivery_type = "sms"
+                delivery_text = f"Code sent via SMS to {phone}."
+            elif isinstance(sent.type, types.auth.SentCodeTypeCall):
+                delivery_type = "call"
+                delivery_text = f"Telegram will call {phone} with your voice code."
+            elif isinstance(sent.type, types.auth.SentCodeTypeFlashCall):
+                delivery_type = "flash_call"
+                delivery_text = f"Telegram is sending a flash call to {phone}."
+
             self.pending_logins[account_id] = {
                 "client": client,
                 "phone": phone,
-                "phone_code_hash": sent.phone_code_hash
+                "phone_code_hash": sent.phone_code_hash,
+                "delivery_type": delivery_type,
+                "timeout": getattr(sent, 'timeout', 60) or 60
             }
             self.statuses[account_id] = "Waiting for OTP"
             return {
                 "success": True,
                 "already_authorized": False,
                 "phone": phone,
-                "phone_code_hash": sent.phone_code_hash
+                "phone_code_hash": sent.phone_code_hash,
+                "delivery_type": delivery_type,
+                "delivery_text": delivery_text,
+                "timeout": getattr(sent, 'timeout', 60) or 60
             }
 
         try:
@@ -120,6 +139,39 @@ class TelegramManager:
             return res
         except Exception as e:
             print(f"[Telegram][{account_id}] Error requesting OTP: {e}")
+            return {"success": False, "error": str(e)}
+
+    def resend_otp(self, account_id: str) -> Dict[str, Any]:
+        """
+        Resend the Telegram OTP code (requesting SMS delivery fallback).
+        """
+        pending = self.pending_logins.get(account_id)
+        if not pending:
+            return {"success": False, "error": "No pending login session found. Please request OTP again."}
+
+        client: TelegramClient = pending["client"]
+        phone: str = pending["phone"]
+        phone_code_hash: str = pending["phone_code_hash"]
+
+        async def _resend():
+            try:
+                sent = await client(functions.auth.ResendCodeRequest(phone, phone_code_hash))
+                pending["phone_code_hash"] = sent.phone_code_hash
+                delivery_type = "sms" if isinstance(sent.type, types.auth.SentCodeTypeSms) else "app"
+                delivery_text = f"Code resent via SMS to {phone}." if delivery_type == "sms" else "Code resent to your Telegram App."
+                return {
+                    "success": True,
+                    "delivery_type": delivery_type,
+                    "delivery_text": delivery_text,
+                    "timeout": getattr(sent, 'timeout', 60) or 60
+                }
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        try:
+            return self._run_coro(_resend(), timeout=30)
+        except Exception as e:
+            print(f"[Telegram][{account_id}] Error resending OTP: {e}")
             return {"success": False, "error": str(e)}
 
     def verify_otp(self, account_id: str, code: str, password: Optional[str] = None) -> Dict[str, Any]:

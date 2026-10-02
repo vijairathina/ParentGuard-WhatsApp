@@ -128,6 +128,15 @@ def telegram_verify_code():
 
     return jsonify(res)
 
+@app.route('/api/telegram/resend_code', methods=['POST'])
+def telegram_resend_code():
+    data = request.json or {}
+    account_id = data.get("account_id")
+    if not account_id:
+        return jsonify({"success": False, "error": "Missing account_id."}), 400
+    res = manager.tg_manager.resend_otp(account_id)
+    return jsonify(res)
+
 # ========================================================
 # INSTAGRAM AUTHENTICATION ROUTES (LOGIN & 2FA)
 # ========================================================

@@ -28,6 +28,8 @@ accounts/accounts.json
 accounts/*.db
 accounts/*.db-wal
 accounts/*.db-shm
+accounts/*.session
+accounts/*.session-journal
 accounts/history_*.json
 accounts/contacts_*.json
 accounts/groups_*.json
