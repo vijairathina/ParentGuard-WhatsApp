@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ParentGuard WhatsApp - Parental Controlled Multi-Account</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.5">
 </head>
 <body data-theme="dark">
     <!-- Realtime Security Alert Notification Toast -->
@@ -70,6 +70,30 @@
                 </div>
             </header>
 
+            <!-- Multi-Platform Navigation & Live Counters Dock -->
+            <div class="platform-nav-dock">
+                <button type="button" class="platform-tab-btn active" data-platform="all" id="plat-tab-all" title="View all accounts and conversations">
+                    <span class="platform-icon">🌐</span>
+                    <span class="platform-label">All</span>
+                    <span class="platform-badge" id="plat-count-all">0</span>
+                </button>
+                <button type="button" class="platform-tab-btn" data-platform="whatsapp" id="plat-tab-whatsapp" title="WhatsApp accounts and chats">
+                    <span class="platform-icon">🟢</span>
+                    <span class="platform-label">WhatsApp</span>
+                    <span class="platform-badge wa-badge" id="plat-count-wa">0</span>
+                </button>
+                <button type="button" class="platform-tab-btn" data-platform="telegram" id="plat-tab-telegram" title="Telegram accounts and chats">
+                    <span class="platform-icon">✈️</span>
+                    <span class="platform-label">Telegram</span>
+                    <span class="platform-badge tg-badge" id="plat-count-tg">0</span>
+                </button>
+                <button type="button" class="platform-tab-btn" data-platform="instagram" id="plat-tab-instagram" title="Instagram accounts and chats">
+                    <span class="platform-icon">📸</span>
+                    <span class="platform-label">Instagram</span>
+                    <span class="platform-badge ig-badge" id="plat-count-ig">0</span>
+                </button>
+            </div>
+
             <!-- Search Area -->
             <div class="search-container">
                 <div class="search-bar">
@@ -78,15 +102,15 @@
                             <path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path>
                         </svg>
                     </span>
-                    <input type="text" id="chat-search" placeholder="Search chats or type phone number (e.g. 919876543210)">
+                    <input type="text" id="chat-search" placeholder="Search chats or phone number...">
                 </div>
             </div>
 
             <!-- Chat Filter Pills -->
             <div class="chat-filter-bar">
-                <button class="filter-pill active" data-filter="all">All</button>
-                <button class="filter-pill" data-filter="chats">Chats</button>
-                <button class="filter-pill" data-filter="groups">Groups</button>
+                <button class="filter-pill active" data-filter="all">All <span class="pill-count" id="filter-count-all"></span></button>
+                <button class="filter-pill" data-filter="chats">Chats <span class="pill-count" id="filter-count-chats"></span></button>
+                <button class="filter-pill" data-filter="groups">Groups <span class="pill-count" id="filter-count-groups"></span></button>
             </div>
 
             <!-- Contacts/Chats List -->
@@ -204,6 +228,7 @@
                         </div>
                     </div>
                     <div class="chat-header-actions">
+                        <span id="chat-platform-pill" class="platform-header-pill" title="Platform">🟢 WhatsApp</span>
                         <span id="chat-monitoring-status" class="monitoring-indicator-pill" title="Live Safety Monitoring Active">
                             <span class="status-dot-pulse"></span> Protected
                         </span>
@@ -236,30 +261,148 @@
         </main>
     </div>
 
-    <!-- Link Account Modal (QR Code) -->
+    <!-- Add / Link Account Modal (Multi-Platform: WhatsApp QR, Telegram OTP, Instagram) -->
     <div class="modal-overlay" id="add-account-modal" style="display: none;">
-        <div class="modal">
+        <div class="modal modal-add-account">
             <div class="modal-header">
-                <h2>Link WhatsApp Account</h2>
+                <div class="modal-title-group">
+                    <h2 id="modal-add-title">Add Monitored Account</h2>
+                    <span class="modal-subtitle">Choose platform to link and watch messages in real time</span>
+                </div>
                 <button class="modal-close" id="btn-close-modal">&times;</button>
             </div>
+
+            <!-- Platform Switch Tabs -->
+            <div class="modal-tabs" id="add-account-platform-tabs">
+                <button type="button" class="tab-btn active" data-platform-tab="tab-add-whatsapp">
+                    <span>🟢 WhatsApp (QR)</span>
+                </button>
+                <button type="button" class="tab-btn" data-platform-tab="tab-add-telegram">
+                    <span>✈️ Telegram (OTP)</span>
+                </button>
+                <button type="button" class="tab-btn" data-platform-tab="tab-add-instagram">
+                    <span>📸 Instagram</span>
+                </button>
+            </div>
+
             <div class="modal-body">
-                <ol class="setup-steps">
-                    <li>Open WhatsApp on the target or monitored phone</li>
-                    <li>Tap <strong>Menu</strong> (⋮) or <strong>Settings</strong> and tap <strong>Linked Devices</strong></li>
-                    <li>Tap on <strong>Link a Device</strong></li>
-                    <li>Point the phone camera at this screen to scan the QR code</li>
-                </ol>
-                <div class="qr-container">
-                    <div id="qr-loading" class="qr-spinner">
-                        <div class="spinner"></div>
-                        <p>Generating secure session code...</p>
+                <!-- TAB 1: WHATSAPP (QR CODE) -->
+                <div class="tab-pane active" id="tab-add-whatsapp">
+                    <ol class="setup-steps">
+                        <li>Open WhatsApp on the target or monitored phone</li>
+                        <li>Tap <strong>Settings</strong> &rarr; <strong>Linked Devices</strong> &rarr; <strong>Link a Device</strong></li>
+                        <li>Point the camera at this screen to scan the QR code</li>
+                    </ol>
+                    <div class="qr-container">
+                        <div id="qr-loading" class="qr-spinner">
+                            <div class="spinner"></div>
+                            <p>Generating secure session code...</p>
+                        </div>
+                        <img id="qr-image" class="qr-image" style="display: none;" src="" alt="WhatsApp QR Code">
                     </div>
-                    <img id="qr-image" class="qr-image" style="display: none;" src="" alt="WhatsApp QR Code">
+                    <div class="status-footer">
+                        <span class="status-dot warning" id="qr-status-dot"></span>
+                        <span id="qr-status-text">Status: Initializing session...</span>
+                    </div>
                 </div>
-                <div class="status-footer">
-                    <span class="status-dot warning" id="qr-status-dot"></span>
-                    <span id="qr-status-text">Status: Initializing session...</span>
+
+                <!-- TAB 2: TELEGRAM (OTP LOGIN) -->
+                <div class="tab-pane" id="tab-add-telegram" style="display: none;">
+                    <div class="platform-login-card">
+                        <div class="platform-card-header">
+                            <span class="platform-pill-badge tg-badge">✈️ Telegram Direct Client</span>
+                            <p class="secondary-text">Connect securely using phone number and instant one-time login code (OTP).</p>
+                        </div>
+
+                        <!-- Step 1: Phone input -->
+                        <div id="tg-step-phone">
+                            <div class="form-group mb-3">
+                                <label class="form-label" for="tg-phone-input">Phone Number (with Country Code):</label>
+                                <input type="tel" id="tg-phone-input" class="form-input" placeholder="+1234567890 or +919944770544" autocomplete="tel">
+                                <small class="text-secondary mt-1 d-block">Telegram will send a 5-digit verification code to your Telegram app or SMS.</small>
+                            </div>
+                            <div class="form-actions mt-3">
+                                <button type="button" class="btn btn-primary w-100" id="btn-tg-send-otp">
+                                    <span>Send Telegram OTP Code</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: OTP & 2FA input (initially hidden) -->
+                        <div id="tg-step-otp" style="display: none;">
+                            <div class="otp-notice-box mb-3">
+                                <span>Code sent to <strong id="tg-sent-phone-display"></strong></span>
+                                <button type="button" class="btn-text-link" id="btn-tg-change-phone">Change phone</button>
+                            </div>
+
+                            <div class="form-group mb-3">
+                                <label class="form-label" for="tg-otp-input">5-Digit Telegram Code:</label>
+                                <input type="text" id="tg-otp-input" class="form-input font-mono letter-spacing-lg text-center font-size-lg" placeholder="12345" maxlength="8">
+                            </div>
+
+                            <div class="form-group mb-3" id="tg-2fa-group">
+                                <label class="form-label" for="tg-password-input">2-Step Cloud Password (If enabled):</label>
+                                <input type="password" id="tg-password-input" class="form-input" placeholder="Enter Telegram 2FA Password (optional)">
+                            </div>
+
+                            <div class="form-actions mt-3">
+                                <button type="button" class="btn btn-primary w-100" id="btn-tg-verify-otp">
+                                    <span>Verify & Connect Telegram</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="tg-status-feedback" class="status-feedback mt-2" style="display: none;"></div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: INSTAGRAM (USERNAME / PASSWORD & 2FA) -->
+                <div class="tab-pane" id="tab-add-instagram" style="display: none;">
+                    <div class="platform-login-card">
+                        <div class="platform-card-header">
+                            <span class="platform-pill-badge ig-badge">📸 Instagram Direct Client</span>
+                            <p class="secondary-text">Connect an Instagram account to monitor direct messages and threads in real time.</p>
+                        </div>
+
+                        <!-- Step 1: Credentials -->
+                        <div id="ig-step-credentials">
+                            <div class="form-group mb-3">
+                                <label class="form-label" for="ig-username-input">Instagram Username:</label>
+                                <input type="text" id="ig-username-input" class="form-input" placeholder="e.g. john_doe" autocomplete="username">
+                            </div>
+
+                            <div class="form-group mb-3">
+                                <label class="form-label" for="ig-password-input">Instagram Password:</label>
+                                <input type="password" id="ig-password-input" class="form-input" placeholder="••••••••••••" autocomplete="current-password">
+                            </div>
+
+                            <div class="form-actions mt-3">
+                                <button type="button" class="btn btn-primary w-100" id="btn-ig-login">
+                                    <span>Connect Instagram Account</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: 2FA input (initially hidden) -->
+                        <div id="ig-step-2fa" style="display: none;">
+                            <div class="otp-notice-box mb-3">
+                                <span>Security verification required for <strong id="ig-username-display"></strong></span>
+                            </div>
+
+                            <div class="form-group mb-3">
+                                <label class="form-label" for="ig-2fa-input">Two-Factor Security Code:</label>
+                                <input type="text" id="ig-2fa-input" class="form-input font-mono letter-spacing-lg text-center" placeholder="6-digit code">
+                            </div>
+
+                            <div class="form-actions mt-3">
+                                <button type="button" class="btn btn-primary w-100" id="btn-ig-verify-2fa">
+                                    <span>Verify & Connect</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="ig-status-feedback" class="status-feedback mt-2" style="display: none;"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -788,5 +931,5 @@
         </div>
     </div>
 </body>
-<script src="{{ url_for('static', filename='js/app.js') }}?v=2.2"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=3.5"></script>
 </html>

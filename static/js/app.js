@@ -6,6 +6,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let activeContactJid = "";
     let contacts = [];
     let activeFilter = "all"; // "all", "chats", "groups"
+    let activePlatform = "all"; // "all", "whatsapp", "telegram", "instagram"
+    let tgCurrentAccountId = "";
+    let igCurrentAccountId = "";
     let qrSessionId = "";
     let eventSource = null;
     let currentAccountSettings = null;
@@ -251,6 +254,70 @@ document.addEventListener("DOMContentLoaded", () => {
         chatSearch.addEventListener("input", handleSearch);
         chatSearch.addEventListener("keydown", handleNewChatSearchEnter);
         messageForm.addEventListener("submit", handleSendMessage);
+
+        // Multi-Platform Navigation Dock Listeners
+        document.querySelectorAll(".platform-tab-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                document.querySelectorAll(".platform-tab-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+                activePlatform = btn.getAttribute("data-platform") || "all";
+                renderAccountsDropdown();
+                const available = getFilteredAccounts();
+                if (available.length > 0 && !available.some(a => a.id === activeAccountId)) {
+                    activeAccountId = available[0].id;
+                    dropdown.value = activeAccountId;
+                    handleAccountSelectionChange();
+                } else if (available.length === 0) {
+                    activeAccountId = "";
+                    dropdown.value = "";
+                    contactsList.innerHTML = `<div class="list-empty"><p>No ${activePlatform.toUpperCase()} accounts configured.</p><button type="button" class="btn btn-primary btn-sm mt-3" id="btn-empty-plat-add">+ Add ${activePlatform.toUpperCase()} Account</button></div>`;
+                    const emptyBtn = document.getElementById("btn-empty-plat-add");
+                    if (emptyBtn) emptyBtn.addEventListener("click", () => openAddAccountModalForPlatform(activePlatform));
+                    hideChatWindow();
+                }
+            });
+        });
+
+        // Add Account Platform Tab Switching
+        document.querySelectorAll("#add-account-platform-tabs .tab-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                document.querySelectorAll("#add-account-platform-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+                const targetTabId = btn.getAttribute("data-platform-tab");
+                document.querySelectorAll("#add-account-modal .tab-pane").forEach(pane => {
+                    pane.style.display = "none";
+                    pane.classList.remove("active");
+                });
+                const targetPane = document.getElementById(targetTabId);
+                if (targetPane) {
+                    targetPane.style.display = "block";
+                    targetPane.classList.add("active");
+                }
+                if (targetTabId === "tab-add-whatsapp" && !qrSessionId) {
+                    requestWhatsAppQrSession();
+                }
+            });
+        });
+
+        // Telegram OTP Login Handlers
+        const btnTgSendOtp = document.getElementById("btn-tg-send-otp");
+        const btnTgChangePhone = document.getElementById("btn-tg-change-phone");
+        const btnTgVerifyOtp = document.getElementById("btn-tg-verify-otp");
+
+        if (btnTgSendOtp) btnTgSendOtp.addEventListener("click", handleTelegramSendOtp);
+        if (btnTgChangePhone) btnTgChangePhone.addEventListener("click", () => {
+            document.getElementById("tg-step-phone").style.display = "block";
+            document.getElementById("tg-step-otp").style.display = "none";
+            document.getElementById("tg-status-feedback").style.display = "none";
+        });
+        if (btnTgVerifyOtp) btnTgVerifyOtp.addEventListener("click", handleTelegramVerifyOtp);
+
+        // Instagram Login Handlers
+        const btnIgLogin = document.getElementById("btn-ig-login");
+        const btnIgVerify2Fa = document.getElementById("btn-ig-verify-2fa");
+
+        if (btnIgLogin) btnIgLogin.addEventListener("click", handleInstagramLogin);
+        if (btnIgVerify2Fa) btnIgVerify2Fa.addEventListener("click", handleInstagramVerify2Fa);
 
         // Filter Pills
         document.querySelectorAll(".filter-pill").forEach(pill => {
@@ -579,15 +646,42 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
+    function getFilteredAccounts() {
+        if (activePlatform === "all") return accounts;
+        if (activePlatform === "whatsapp") return accounts.filter(a => a.platform === "whatsapp" || !a.platform);
+        return accounts.filter(a => a.platform === activePlatform);
+    }
+
+    async function loadPlatformCounts() {
+        try {
+            const res = await fetch("/api/platform_counts");
+            const counts = await res.json();
+            
+            const elAll = document.getElementById("plat-count-all");
+            const elWa = document.getElementById("plat-count-wa");
+            const elTg = document.getElementById("plat-count-tg");
+            const elIg = document.getElementById("plat-count-ig");
+
+            if (elAll) elAll.innerText = counts.total ? counts.total.accounts : 0;
+            if (elWa) elWa.innerText = counts.whatsapp ? counts.whatsapp.accounts : 0;
+            if (elTg) elTg.innerText = counts.telegram ? counts.telegram.accounts : 0;
+            if (elIg) elIg.innerText = counts.instagram ? counts.instagram.accounts : 0;
+        } catch (e) {
+            console.error("Error loading platform counts:", e);
+        }
+    }
+
     // --- Accounts Management ---
     async function loadAccounts() {
         try {
             const res = await fetch("/api/accounts");
             accounts = await res.json();
             renderAccountsDropdown();
+            await loadPlatformCounts();
 
             if (!activeAccountId && accounts && accounts.length) {
-                const firstConnected = accounts.find(a => a.status === 'Connected') || accounts[0];
+                const available = getFilteredAccounts();
+                const firstConnected = available.find(a => a.status === 'Connected') || available[0];
                 if (firstConnected) {
                     activeAccountId = firstConnected.id;
                     dropdown.value = activeAccountId;
@@ -601,25 +695,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderAccountsDropdown() {
         dropdown.innerHTML = '<option value="" disabled selected>Select Account</option>';
-        accounts.forEach(acc => {
+        const available = getFilteredAccounts();
+        available.forEach(acc => {
             const opt = document.createElement("option");
             opt.value = acc.id;
-            opt.textContent = `${acc.name} (${acc.status})`;
+            const icon = acc.platform === "telegram" ? "✈️" : (acc.platform === "instagram" ? "📸" : "🟢");
+            opt.textContent = `${icon} ${acc.name} (${acc.status})`;
             dropdown.appendChild(opt);
         });
 
-        if (activeAccountId && accounts.some(a => a.id === activeAccountId)) {
+        if (activeAccountId && available.some(a => a.id === activeAccountId)) {
+            dropdown.value = activeAccountId;
+            updateActiveAccountUI();
+        } else if (available.length > 0) {
+            activeAccountId = available[0].id;
             dropdown.value = activeAccountId;
             updateActiveAccountUI();
         } else {
             dropdown.value = "";
             activeAvatar.innerText = "PG";
+            btnDeleteAccount.disabled = true;
             btnOpenSettings.disabled = true;
             btnOpenLogs.disabled = true;
             contactsList.innerHTML = `
                 <div class="list-empty">
-                    <p>Select a WhatsApp account to load chats.</p>
+                    <p>No ${activePlatform.toUpperCase()} accounts configured.</p>
+                    <button type="button" class="btn btn-primary btn-sm mt-3" id="btn-empty-plat-add">+ Add Account</button>
                 </div>`;
+            const emptyBtn = document.getElementById("btn-empty-plat-add");
+            if (emptyBtn) emptyBtn.addEventListener("click", () => openAddAccountModalForPlatform(activePlatform));
         }
     }
 
@@ -1268,8 +1372,32 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function openAddAccountModal() {
+    function openAddAccountModalForPlatform(platform) {
         addAccountModal.style.display = "flex";
+        
+        let tabId = "tab-add-whatsapp";
+        if (platform === "telegram") tabId = "tab-add-telegram";
+        else if (platform === "instagram") tabId = "tab-add-instagram";
+
+        // Activate corresponding tab button
+        document.querySelectorAll("#add-account-platform-tabs .tab-btn").forEach(btn => {
+            btn.classList.toggle("active", btn.getAttribute("data-platform-tab") === tabId);
+        });
+        document.querySelectorAll("#add-account-modal .tab-pane").forEach(pane => {
+            pane.style.display = pane.id === tabId ? "block" : "none";
+            pane.classList.toggle("active", pane.id === tabId);
+        });
+
+        if (tabId === "tab-add-whatsapp") {
+            requestWhatsAppQrSession();
+        }
+    }
+
+    async function openAddAccountModal() {
+        openAddAccountModalForPlatform(activePlatform !== "all" ? activePlatform : "whatsapp");
+    }
+
+    async function requestWhatsAppQrSession() {
         qrLoading.style.display = "flex";
         qrImage.style.display = "none";
         qrStatusDot.className = "status-dot warning";
@@ -1277,7 +1405,11 @@ document.addEventListener("DOMContentLoaded", () => {
         qrSessionId = "";
 
         try {
-            const res = await fetch("/api/accounts/add", { method: "POST" });
+            const res = await fetch("/api/accounts/add", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ platform: "whatsapp" })
+            });
             const data = await res.json();
             if (data.success) {
                 qrSessionId = data.account_id;
@@ -1294,6 +1426,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openAddAccountModalDirect(qrBase64) {
         addAccountModal.style.display = "flex";
+        openAddAccountModalForPlatform("whatsapp");
         if (qrBase64) {
             qrLoading.style.display = "none";
             qrImage.src = `data:image/png;base64,${qrBase64}`;
@@ -1311,6 +1444,238 @@ document.addEventListener("DOMContentLoaded", () => {
     function closeAddAccountModal() {
         addAccountModal.style.display = "none";
         qrSessionId = "";
+        const tgFeedback = document.getElementById("tg-status-feedback");
+        if (tgFeedback) tgFeedback.style.display = "none";
+        const igFeedback = document.getElementById("ig-status-feedback");
+        if (igFeedback) igFeedback.style.display = "none";
+    }
+
+    // --- Telegram Authentication (Phone -> OTP Code -> Optional 2FA) ---
+    async function handleTelegramSendOtp() {
+        const phoneInput = document.getElementById("tg-phone-input");
+        const feedback = document.getElementById("tg-status-feedback");
+        const btn = document.getElementById("btn-tg-send-otp");
+        const phone = (phoneInput.value || "").trim();
+
+        if (!phone) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Please enter a valid phone number with country code.";
+            feedback.style.display = "block";
+            return;
+        }
+
+        feedback.style.display = "none";
+        btn.disabled = true;
+        btn.innerHTML = `<span>Requesting Telegram Code...</span>`;
+
+        try {
+            const res = await fetch("/api/telegram/send_code", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ phone })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                tgCurrentAccountId = data.account_id;
+                document.getElementById("tg-sent-phone-display").innerText = phone;
+                document.getElementById("tg-step-phone").style.display = "none";
+                document.getElementById("tg-step-otp").style.display = "block";
+                document.getElementById("tg-otp-input").value = "";
+                document.getElementById("tg-otp-input").focus();
+            } else {
+                feedback.className = "status-feedback error";
+                feedback.innerText = data.error || "Failed to send Telegram OTP.";
+                feedback.style.display = "block";
+            }
+        } catch (err) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Network error while contacting Telegram.";
+            feedback.style.display = "block";
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span>Send Telegram OTP Code</span>`;
+        }
+    }
+
+    async function handleTelegramVerifyOtp() {
+        const otpInput = document.getElementById("tg-otp-input");
+        const pwdInput = document.getElementById("tg-password-input");
+        const feedback = document.getElementById("tg-status-feedback");
+        const btn = document.getElementById("btn-tg-verify-otp");
+        const code = (otpInput.value || "").trim();
+        const password = (pwdInput.value || "").trim();
+
+        if (!code) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Please enter the 5-digit verification code.";
+            feedback.style.display = "block";
+            return;
+        }
+
+        feedback.style.display = "none";
+        btn.disabled = true;
+        btn.innerHTML = `<span>Verifying Code...</span>`;
+
+        try {
+            const res = await fetch("/api/telegram/verify_code", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    account_id: tgCurrentAccountId,
+                    code,
+                    password
+                })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                feedback.className = "status-feedback success";
+                feedback.innerText = `Connected! Logged in as ${data.name || "Telegram User"}.`;
+                feedback.style.display = "block";
+
+                setTimeout(() => {
+                    closeAddAccountModal();
+                    loadAccounts().then(() => {
+                        activeAccountId = tgCurrentAccountId;
+                        dropdown.value = activeAccountId;
+                        handleAccountSelectionChange();
+                    });
+                    loadPlatformCounts();
+                }, 1000);
+            } else {
+                feedback.className = "status-feedback error";
+                feedback.innerText = data.error || "Verification failed. Check the code or 2FA password.";
+                feedback.style.display = "block";
+            }
+        } catch (err) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Network error verifying code.";
+            feedback.style.display = "block";
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span>Verify & Connect Telegram</span>`;
+        }
+    }
+
+    // --- Instagram Authentication (Username/Password -> 2FA) ---
+    async function handleInstagramLogin() {
+        const userInput = document.getElementById("ig-username-input");
+        const passInput = document.getElementById("ig-password-input");
+        const feedback = document.getElementById("ig-status-feedback");
+        const btn = document.getElementById("btn-ig-login");
+        const username = (userInput.value || "").trim();
+        const password = (passInput.value || "").trim();
+
+        if (!username || !password) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Please enter both Instagram username and password.";
+            feedback.style.display = "block";
+            return;
+        }
+
+        feedback.style.display = "none";
+        btn.disabled = true;
+        btn.innerHTML = `<span>Connecting to Instagram...</span>`;
+
+        try {
+            const res = await fetch("/api/instagram/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                feedback.className = "status-feedback success";
+                feedback.innerText = `Connected! Logged in as @${username}.`;
+                feedback.style.display = "block";
+
+                setTimeout(() => {
+                    closeAddAccountModal();
+                    loadAccounts().then(() => {
+                        activeAccountId = data.account_id;
+                        dropdown.value = activeAccountId;
+                        handleAccountSelectionChange();
+                    });
+                    loadPlatformCounts();
+                }, 1000);
+            } else if (data.requires_2fa) {
+                igCurrentAccountId = data.account_id;
+                document.getElementById("ig-username-display").innerText = "@" + username;
+                document.getElementById("ig-step-credentials").style.display = "none";
+                document.getElementById("ig-step-2fa").style.display = "block";
+                document.getElementById("ig-2fa-input").focus();
+            } else {
+                feedback.className = "status-feedback error";
+                feedback.innerText = data.error || "Instagram login failed.";
+                feedback.style.display = "block";
+            }
+        } catch (err) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Network error logging into Instagram.";
+            feedback.style.display = "block";
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span>Connect Instagram Account</span>`;
+        }
+    }
+
+    async function handleInstagramVerify2Fa() {
+        const codeInput = document.getElementById("ig-2fa-input");
+        const feedback = document.getElementById("ig-status-feedback");
+        const btn = document.getElementById("btn-ig-verify-2fa");
+        const code = (codeInput.value || "").trim();
+
+        if (!code) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Please enter the two-factor security code.";
+            feedback.style.display = "block";
+            return;
+        }
+
+        feedback.style.display = "none";
+        btn.disabled = true;
+        btn.innerHTML = `<span>Verifying 2FA...</span>`;
+
+        try {
+            const res = await fetch("/api/instagram/verify_2fa", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    account_id: igCurrentAccountId,
+                    code
+                })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                feedback.className = "status-feedback success";
+                feedback.innerText = `Connected to Instagram!`;
+                feedback.style.display = "block";
+
+                setTimeout(() => {
+                    closeAddAccountModal();
+                    loadAccounts().then(() => {
+                        activeAccountId = igCurrentAccountId;
+                        dropdown.value = activeAccountId;
+                        handleAccountSelectionChange();
+                    });
+                    loadPlatformCounts();
+                }, 1000);
+            } else {
+                feedback.className = "status-feedback error";
+                feedback.innerText = data.error || "2FA verification failed.";
+                feedback.style.display = "block";
+            }
+        } catch (err) {
+            feedback.className = "status-feedback error";
+            feedback.innerText = "Network error verifying 2FA code.";
+            feedback.style.display = "block";
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span>Verify & Connect</span>`;
+        }
     }
 
     // --- Contacts & Chats Logic ---
@@ -1419,6 +1784,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function applyFiltersAndRender() {
         let filtered = contacts;
+
+        // Update live counts on the filter pills
+        const countAll = contacts.length;
+        const countChats = contacts.filter(c => !c.is_group).length;
+        const countGroups = contacts.filter(c => c.is_group).length;
+
+        const elCountAll = document.getElementById("filter-count-all");
+        const elCountChats = document.getElementById("filter-count-chats");
+        const elCountGroups = document.getElementById("filter-count-groups");
+        if (elCountAll) elCountAll.innerText = countAll > 0 ? `(${countAll})` : "";
+        if (elCountChats) elCountChats.innerText = countChats > 0 ? `(${countChats})` : "";
+        if (elCountGroups) elCountGroups.innerText = countGroups > 0 ? `(${countGroups})` : "";
         
         // Tab Filter: all, chats, groups
         if (activeFilter === "chats") {
@@ -1449,7 +1826,7 @@ document.addEventListener("DOMContentLoaded", () => {
             contactsList.innerHTML = `
                 <div class="list-empty">
                     <p>No conversations found.</p>
-                    <p class="secondary-text">Type a phone number in search box and press Enter to start chatting.</p>
+                    <p class="secondary-text">Type a phone number or username in search box and press Enter to start chatting.</p>
                 </div>`;
             return;
         }
@@ -1461,6 +1838,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const displayName = getChatDisplayName(c);
             const initials = getChatInitials(c, displayName);
             const avatarClass = c.is_group ? "contact-avatar group-avatar" : "contact-avatar";
+
+            const activeAcc = accounts.find(a => a.id === activeAccountId);
+            const platform = c.platform || (activeAcc && activeAcc.platform) || "whatsapp";
+            let platTag = '<span class="contact-platform-tag wa">WA</span>';
+            if (platform === "telegram") platTag = '<span class="contact-platform-tag tg">TG</span>';
+            else if (platform === "instagram") platTag = '<span class="contact-platform-tag ig">IG</span>';
 
             let timeStr = "";
             if (c.timestamp && c.timestamp > 0) {
@@ -1478,7 +1861,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="${avatarClass}">${initials}</div>
                 <div class="contact-info">
                     <div class="contact-info-row">
-                        <span class="contact-name">${escapeHTML(displayName)}</span>
+                        <span class="contact-name">${platTag}${escapeHTML(displayName)}</span>
                         <span class="contact-time">${timeStr}</span>
                     </div>
                     <div class="contact-preview">
@@ -1502,18 +1885,28 @@ document.addEventListener("DOMContentLoaded", () => {
         
         applyFiltersAndRender();
 
+        const activeAcc = accounts.find(a => a.id === activeAccountId);
+        const platform = (contact && contact.platform) || (activeAcc && activeAcc.platform) || "whatsapp";
+
+        // Update platform badge pill in chat header
+        const chatPlatPill = document.getElementById("chat-platform-pill");
+        if (chatPlatPill) {
+            chatPlatPill.className = "platform-header-pill " + (platform === "telegram" ? "tg" : (platform === "instagram" ? "ig" : "wa"));
+            chatPlatPill.innerHTML = platform === "telegram" ? "✈️ Telegram" : (platform === "instagram" ? "📸 Instagram" : "🟢 WhatsApp");
+        }
+
         const displayName = getChatDisplayName(contact);
         chatContactName.innerText = displayName;
 
         if (contact.is_group) {
-            chatContactJid.innerText = "WhatsApp Group";
+            chatContactJid.innerText = platform === "telegram" ? "Telegram Group" : (platform === "instagram" ? "Instagram Group" : "WhatsApp Group");
         } else if (isProperName(contact.name)) {
             // Contact has a saved name: show phone number as subtitle!
             const phone = contact.phone_number || (contact.jid && !contact.jid.includes('@lid') ? contact.jid.split('@')[0] : '');
-            chatContactJid.innerText = phone ? formatPhoneNumber(phone) : "";
+            chatContactJid.innerText = phone ? formatPhoneNumber(phone) : (contact.jid || "");
         } else {
-            // Unsaved / new number: title is already the phone number, show subtitle as WhatsApp Contact
-            chatContactJid.innerText = "WhatsApp Contact";
+            // Unsaved / new number: title is already the phone number, show subtitle as Contact
+            chatContactJid.innerText = platform === "telegram" ? "Telegram Contact" : (platform === "instagram" ? "Instagram Direct" : "WhatsApp Contact");
         }
         
         const initials = getChatInitials(contact, displayName);
@@ -1525,8 +1918,7 @@ document.addEventListener("DOMContentLoaded", () => {
         chatWindow.style.display = "flex";
 
         // Check if active account is logged out/disconnected and show banner
-        const acc = accounts.find(a => a.id === activeAccountId);
-        if (acc && acc.status !== "Connected" && sessionNoticeBanner) {
+        if (activeAcc && activeAcc.status !== "Connected" && sessionNoticeBanner) {
             sessionNoticeBanner.style.display = "flex";
         } else if (sessionNoticeBanner) {
             sessionNoticeBanner.style.display = "none";

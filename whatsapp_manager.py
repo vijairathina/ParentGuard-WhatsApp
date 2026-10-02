@@ -40,7 +40,11 @@ class WhatsAppManager:
         self.profile_info: Dict[str, Dict[str, Any]] = {}
         self.listeners: List[queue.Queue] = []
         self.monitor = ContentMonitor()
-        self.lid_maps: Dict[str, Dict[str, Dict[str, str]]] = {}
+        # Multi-Platform Sub-Managers (Telegram & Instagram)
+        from telegram_manager import TelegramManager
+        from instagram_manager import InstagramManager
+        self.tg_manager = TelegramManager(parent_manager=self)
+        self.ig_manager = InstagramManager(parent_manager=self)
         
         # Ensure directory exists
         os.makedirs("accounts", exist_ok=True)
@@ -77,6 +81,43 @@ class WhatsAppManager:
             except Exception:
                 pass
 
+    def get_account_status(self, account_id: str) -> str:
+        plat = self.profile_info.get(account_id, {}).get("platform", "whatsapp")
+        if plat == "telegram" and hasattr(self, "tg_manager"):
+            return self.tg_manager.statuses.get(account_id, "Disconnected")
+        elif plat == "instagram" and hasattr(self, "ig_manager"):
+            return self.ig_manager.statuses.get(account_id, "Disconnected")
+        return self.statuses.get(account_id, "Disconnected")
+
+    def get_platform_counts(self) -> Dict[str, Any]:
+        """Calculates live summary counts (accounts, unread, chats) for WhatsApp, Telegram, Instagram, and Total."""
+        counts = {
+            "whatsapp": {"accounts": 0, "unread": 0, "chats": 0},
+            "telegram": {"accounts": 0, "unread": 0, "chats": 0},
+            "instagram": {"accounts": 0, "unread": 0, "chats": 0},
+            "total": {"accounts": 0, "unread": 0, "chats": 0}
+        }
+        for acc_id, info in self.profile_info.items():
+            plat = info.get("platform", "whatsapp")
+            if plat not in counts:
+                plat = "whatsapp"
+            counts[plat]["accounts"] += 1
+            counts["total"]["accounts"] += 1
+
+            try:
+                contacts = self.get_contacts(acc_id)
+                counts[plat]["chats"] += len(contacts)
+                counts["total"]["chats"] += len(contacts)
+                for c in contacts:
+                    unr = c.get("unread_count", 0)
+                    if isinstance(unr, int) and unr > 0:
+                        counts[plat]["unread"] += unr
+                        counts["total"]["unread"] += unr
+            except Exception:
+                pass
+
+        return counts
+
     def load_accounts(self):
         with _lock:
             if os.path.exists(ACCOUNTS_FILE):
@@ -85,13 +126,20 @@ class WhatsAppManager:
                         accounts = json.load(f)
                         for acc in accounts:
                             acc_id = acc["id"]
+                            plat = acc.get("platform", "whatsapp")
                             self.statuses[acc_id] = "Disconnected"
                             self.profile_info[acc_id] = {
                                 "id": acc_id,
+                                "platform": plat,
                                 "name": acc.get("name", "Account " + acc_id),
                                 "jid": acc.get("jid", ""),
-                                "phone": acc.get("phone", "")
+                                "phone": acc.get("phone", ""),
+                                "username": acc.get("username", "")
                             }
+                            if plat == "telegram" and hasattr(self, "tg_manager"):
+                                self.tg_manager.init_account(acc_id, name=acc.get("name", ""), phone=acc.get("phone", ""))
+                            elif plat == "instagram" and hasattr(self, "ig_manager"):
+                                self.ig_manager.init_account(acc_id, name=acc.get("name", ""), username=acc.get("username", ""))
                 except Exception as e:
                     print(f"[Manager] Error loading accounts: {e}")
             else:
@@ -102,12 +150,15 @@ class WhatsAppManager:
         with _lock:
             accounts_data = []
             for acc_id, info in self.profile_info.items():
+                plat = info.get("platform", "whatsapp")
                 accounts_data.append({
                     "id": acc_id,
+                    "platform": plat,
                     "name": info.get("name", ""),
                     "jid": info.get("jid", ""),
                     "phone": info.get("phone", ""),
-                    "status": self.statuses.get(acc_id, "Disconnected")
+                    "username": info.get("username", ""),
+                    "status": self.get_account_status(acc_id)
                 })
             try:
                 with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
@@ -116,13 +167,19 @@ class WhatsAppManager:
                 print(f"[Manager] Error saving accounts.json: {e}")
 
     def start_all(self):
-        # Auto-start previously configured accounts
+        # Auto-start previously configured accounts across all platforms
         acc_ids = list(self.profile_info.keys())
         print(f"[Manager] Auto-starting {len(acc_ids)} accounts: {acc_ids}")
         for acc_id in acc_ids:
             self.start_account(acc_id)
 
     def start_account(self, account_id: str) -> bool:
+        plat = self.profile_info.get(account_id, {}).get("platform", "whatsapp")
+        if plat == "telegram" and hasattr(self, "tg_manager"):
+            return self.tg_manager.start_account(account_id)
+        elif plat == "instagram" and hasattr(self, "ig_manager"):
+            return self.ig_manager.start_account(account_id)
+
         if account_id in self.clients:
             print(f"[Manager] Account {account_id} already running.")
             return True
@@ -260,17 +317,23 @@ class WhatsAppManager:
                 print(f"[Manager] Error stopping account {acc_id}: {e}")
 
     def delete_account(self, account_id: str) -> bool:
-        self.stop_account(account_id)
-        
-        # Delete session database files
-        db_path = f"accounts/{account_id}.db"
-        for ext in ["", "-wal", "-shm"]:
-            fpath = db_path + ext
-            if os.path.exists(fpath):
-                try:
-                    os.remove(fpath)
-                except Exception as e:
-                    print(f"[Manager] Error removing db file {fpath}: {e}")
+        plat = self.profile_info.get(account_id, {}).get("platform", "whatsapp")
+        if plat == "telegram" and hasattr(self, "tg_manager"):
+            self.tg_manager.delete_account(account_id)
+        elif plat == "instagram" and hasattr(self, "ig_manager"):
+            self.ig_manager.delete_account(account_id)
+        else:
+            self.stop_account(account_id)
+            
+            # Delete session database files
+            db_path = f"accounts/{account_id}.db"
+            for ext in ["", "-wal", "-shm"]:
+                fpath = db_path + ext
+                if os.path.exists(fpath):
+                    try:
+                        os.remove(fpath)
+                    except Exception as e:
+                        print(f"[Manager] Error removing db file {fpath}: {e}")
                     
         # Remove from profile info
         if account_id in self.profile_info:
@@ -281,7 +344,7 @@ class WhatsAppManager:
             del self.qr_codes[account_id]
             
         # Clean custom json files for history and contacts
-        for ftype in ["history", "contacts", "groups"]:
+        for ftype in ["history", "contacts", "groups", "settings", "audit_log"]:
             fpath = f"accounts/{ftype}_{account_id}.json"
             if os.path.exists(fpath):
                 try:
@@ -1310,6 +1373,12 @@ class WhatsAppManager:
         return result
 
     def get_contacts(self, account_id: str) -> List[Dict[str, Any]]:
+        plat = self.profile_info.get(account_id, {}).get("platform", "whatsapp")
+        if plat == "telegram" and hasattr(self, "tg_manager"):
+            return self.tg_manager.get_contacts(account_id)
+        elif plat == "instagram" and hasattr(self, "ig_manager"):
+            return self.ig_manager.get_contacts(account_id)
+
         CONTACTS_FILE = f"accounts/contacts_{account_id}.json"
         
         # If contacts file is empty or only has groups, refresh from DB
@@ -1354,6 +1423,12 @@ class WhatsAppManager:
         return None
 
     def get_messages(self, account_id: str, chat_jid: str) -> List[Dict[str, Any]]:
+        plat = self.profile_info.get(account_id, {}).get("platform", "whatsapp")
+        if plat == "telegram" and hasattr(self, "tg_manager"):
+            return self.tg_manager.get_messages(account_id, chat_jid)
+        elif plat == "instagram" and hasattr(self, "ig_manager"):
+            return self.ig_manager.get_messages(account_id, chat_jid)
+
         HISTORY_FILE = f"accounts/history_{account_id}.json"
         if not os.path.exists(HISTORY_FILE):
             return []
@@ -1437,6 +1512,12 @@ class WhatsAppManager:
         return messages
 
     def send_whatsapp_message(self, account_id: str, target: str, body: str) -> bool:
+        plat = self.profile_info.get(account_id, {}).get("platform", "whatsapp")
+        if plat == "telegram" and hasattr(self, "tg_manager"):
+            return self.tg_manager.send_message(account_id, target, body)
+        elif plat == "instagram" and hasattr(self, "ig_manager"):
+            return self.ig_manager.send_message(account_id, target, body)
+
         client = self.clients.get(account_id)
         if not client or self.statuses.get(account_id) != "Connected":
             print(f"[Manager] Account {account_id} not connected or client missing.")

@@ -32,38 +32,147 @@ def get_accounts():
     for acc_id, info in manager.profile_info.items():
         accounts.append({
             "id": acc_id,
+            "platform": info.get("platform", "whatsapp"),
             "name": info.get("name", ""),
             "jid": info.get("jid", ""),
             "phone": info.get("phone", ""),
-            "status": manager.statuses.get(acc_id, "Disconnected"),
+            "username": info.get("username", ""),
+            "status": manager.get_account_status(acc_id),
             "qr": manager.qr_codes.get(acc_id, "")
         })
     return jsonify(accounts)
+
+@app.route('/api/platform_counts', methods=['GET'])
+def get_platform_counts():
+    """
+    Returns live counts of accounts, unread messages, and active chats
+    broken down by platform: WhatsApp, Telegram, Instagram, and Total.
+    """
+    return jsonify(manager.get_platform_counts())
 
 @app.route('/api/accounts/add', methods=['POST'])
 def add_account():
     """
     Generates a new account ID, registers it, and initiates connection.
+    Supports platform: 'whatsapp' (default), 'telegram', or 'instagram'.
     """
-    account_id = f"acc_{uuid.uuid4().hex[:8]}"
+    data = request.json or {}
+    platform = data.get("platform", "whatsapp").lower()
+    prefix = "tg" if platform == "telegram" else ("ig" if platform == "instagram" else "wa")
+    account_id = f"acc_{prefix}_{uuid.uuid4().hex[:6]}"
     
-    # Register empty metadata in manager
+    # Register metadata in manager
     manager.profile_info[account_id] = {
         "id": account_id,
-        "name": f"Account {account_id[4:]}",
+        "platform": platform,
+        "name": f"{platform.capitalize()} {account_id[-4:]}",
         "jid": "",
-        "phone": ""
+        "phone": "",
+        "username": ""
     }
     manager.statuses[account_id] = "Connecting"
     manager.save_accounts()
     
-    # Start background client connection thread
-    manager.start_account(account_id)
+    if platform == "whatsapp":
+        # Start background client connection thread for QR code
+        manager.start_account(account_id)
     
     return jsonify({
         "success": True,
-        "account_id": account_id
+        "account_id": account_id,
+        "platform": platform
     })
+
+# ========================================================
+# TELEGRAM AUTHENTICATION ROUTES (OTP & 2FA)
+# ========================================================
+@app.route('/api/telegram/send_code', methods=['POST'])
+def telegram_send_code():
+    data = request.json or {}
+    account_id = data.get("account_id")
+    phone = data.get("phone", "")
+    if not phone:
+        return jsonify({"success": False, "error": "Phone number is required."}), 400
+
+    if not account_id:
+        account_id = f"acc_tg_{uuid.uuid4().hex[:6]}"
+        manager.profile_info[account_id] = {
+            "id": account_id,
+            "platform": "telegram",
+            "name": f"Telegram {phone[-4:] if len(phone) >= 4 else account_id[-4:]}",
+            "phone": phone,
+            "username": ""
+        }
+        manager.save_accounts()
+
+    res = manager.tg_manager.request_otp(account_id, phone)
+    res["account_id"] = account_id
+    return jsonify(res)
+
+@app.route('/api/telegram/verify_code', methods=['POST'])
+def telegram_verify_code():
+    data = request.json or {}
+    account_id = data.get("account_id")
+    code = data.get("code")
+    password = data.get("password")
+
+    if not account_id or not code:
+        return jsonify({"success": False, "error": "Missing account_id or OTP code."}), 400
+
+    res = manager.tg_manager.verify_otp(account_id, code, password=password)
+    if res.get("success"):
+        manager.profile_info[account_id]["name"] = res.get("name") or manager.profile_info[account_id].get("name")
+        manager.profile_info[account_id]["phone"] = res.get("phone") or manager.profile_info[account_id].get("phone")
+        manager.profile_info[account_id]["username"] = res.get("username", "")
+        manager.save_accounts()
+
+    return jsonify(res)
+
+# ========================================================
+# INSTAGRAM AUTHENTICATION ROUTES (LOGIN & 2FA)
+# ========================================================
+@app.route('/api/instagram/login', methods=['POST'])
+def instagram_login():
+    data = request.json or {}
+    account_id = data.get("account_id")
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
+    if not username or not password:
+        return jsonify({"success": False, "error": "Username and password are required."}), 400
+
+    if not account_id:
+        account_id = f"acc_ig_{uuid.uuid4().hex[:6]}"
+        manager.profile_info[account_id] = {
+            "id": account_id,
+            "platform": "instagram",
+            "name": f"Instagram @{username}",
+            "username": username,
+            "phone": ""
+        }
+        manager.save_accounts()
+
+    res = manager.ig_manager.login(account_id, username, password)
+    res["account_id"] = account_id
+    if res.get("success"):
+        manager.save_accounts()
+
+    return jsonify(res)
+
+@app.route('/api/instagram/verify_2fa', methods=['POST'])
+def instagram_verify_2fa():
+    data = request.json or {}
+    account_id = data.get("account_id")
+    code = data.get("code", "").strip()
+
+    if not account_id or not code:
+        return jsonify({"success": False, "error": "Missing account_id or 2FA code."}), 400
+
+    res = manager.ig_manager.verify_2fa(account_id, code)
+    if res.get("success"):
+        manager.save_accounts()
+
+    return jsonify(res)
 
 @app.route('/api/accounts/delete', methods=['POST'])
 def delete_account():

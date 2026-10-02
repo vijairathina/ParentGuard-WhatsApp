@@ -2798,5 +2798,275 @@ input:checked + .slider:before {
     transform: scale(1.08);
 }
 
+/* ========================================================
+   MULTI-PLATFORM NAVIGATION & LIVE COUNT DOCK (TRENDING GLASS)
+   ======================================================== */
+.platform-nav-dock {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    padding: 10px 12px 6px;
+    background: transparent;
+}
+
+.platform-tab-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 7px 4px 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    user-select: none;
+}
+
+.platform-tab-btn:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.16);
+    transform: translateY(-1.5px);
+}
+
+.platform-tab-btn.active {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+.platform-tab-btn[data-platform="telegram"].active {
+    background: rgba(0, 136, 204, 0.14);
+    border-color: rgba(0, 136, 204, 0.5);
+    box-shadow: 0 4px 16px rgba(0, 136, 204, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+.platform-tab-btn[data-platform="instagram"].active {
+    background: rgba(225, 48, 108, 0.14);
+    border-color: rgba(225, 48, 108, 0.5);
+    box-shadow: 0 4px 16px rgba(225, 48, 108, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+.platform-icon {
+    font-size: 15px;
+    line-height: 1;
+}
+
+.platform-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.platform-tab-btn.active .platform-label {
+    color: var(--text-primary);
+}
+
+/* Badge counts */
+.platform-badge {
+    position: absolute;
+    top: -5px;
+    right: -4px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+    font-size: 9.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+}
+
+.platform-badge.wa-badge {
+    background: linear-gradient(135deg, #10b981, #059669);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.platform-badge.tg-badge {
+    background: linear-gradient(135deg, #0088cc, #006699);
+    border-color: rgba(0, 136, 204, 0.4);
+    box-shadow: 0 0 8px rgba(0, 136, 204, 0.4);
+}
+
+.platform-badge.ig-badge {
+    background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+    border-color: rgba(225, 48, 108, 0.4);
+    box-shadow: 0 0 8px rgba(225, 48, 108, 0.4);
+}
+
+/* Filter pill count */
+.pill-count {
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0.85;
+    margin-left: 2px;
+}
+
+/* Platform Header Pill in Chat View */
+.platform-header-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(8px);
+    color: var(--text-primary);
+}
+
+.platform-header-pill.wa {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #34d399;
+}
+
+.platform-header-pill.tg {
+    background: rgba(0, 136, 204, 0.14);
+    border-color: rgba(0, 136, 204, 0.35);
+    color: #38bdf8;
+}
+
+.platform-header-pill.ig {
+    background: rgba(225, 48, 108, 0.14);
+    border-color: rgba(225, 48, 108, 0.35);
+    color: #f472b6;
+}
+
+/* Micro Platform Tag on Contact items */
+.contact-platform-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+.contact-platform-tag.wa {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.contact-platform-tag.tg {
+    background: rgba(0, 136, 204, 0.2);
+    color: #38bdf8;
+    border: 1px solid rgba(0, 136, 204, 0.35);
+}
+
+.contact-platform-tag.ig {
+    background: rgba(225, 48, 108, 0.2);
+    color: #f472b6;
+    border: 1px solid rgba(225, 48, 108, 0.35);
+}
+
+/* Multi-Platform Add Account Modal Styles */
+.modal-add-account {
+    max-width: 520px;
+}
+
+.platform-login-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 20px;
+    backdrop-filter: blur(16px);
+}
+
+.platform-card-header {
+    margin-bottom: 18px;
+}
+
+.platform-pill-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.platform-pill-badge.tg-badge {
+    background: rgba(0, 136, 204, 0.2);
+    color: #38bdf8;
+    border: 1px solid rgba(0, 136, 204, 0.4);
+}
+
+.platform-pill-badge.ig-badge {
+    background: rgba(225, 48, 108, 0.2);
+    color: #f472b6;
+    border: 1px solid rgba(225, 48, 108, 0.4);
+}
+
+.otp-notice-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border-left: 3px solid #38bdf8;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.btn-text-link {
+    background: transparent;
+    border: none;
+    color: #38bdf8;
+    cursor: pointer;
+    font-size: 12px;
+    text-decoration: underline;
+    padding: 0;
+}
+
+.letter-spacing-lg {
+    letter-spacing: 0.35em;
+}
+
+.font-size-lg {
+    font-size: 20px !important;
+}
+
+.status-feedback {
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.status-feedback.error {
+    background: rgba(239, 68, 68, 0.18);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.status-feedback.success {
+    background: rgba(16, 185, 129, 0.18);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
 
 
