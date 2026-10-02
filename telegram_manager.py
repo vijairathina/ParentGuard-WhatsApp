@@ -104,6 +104,11 @@ class TelegramManager:
 
             sent = await client.send_code_request(phone)
             
+            sent_type_name = type(sent.type).__name__
+            next_type_name = type(sent.next_type).__name__ if getattr(sent, 'next_type', None) else "None"
+            timeout = getattr(sent, 'timeout', 60) or 60
+            print(f"[Telegram][{account_id}] Code requested for {phone}: type={sent_type_name}, next_type={next_type_name}, timeout={timeout}s")
+
             delivery_type = "app"
             delivery_text = "Code sent to your Telegram App! Open Telegram on your phone or desktop and check the official 'Telegram' service chat."
             if isinstance(sent.type, types.auth.SentCodeTypeSms):
@@ -121,7 +126,7 @@ class TelegramManager:
                 "phone": phone,
                 "phone_code_hash": sent.phone_code_hash,
                 "delivery_type": delivery_type,
-                "timeout": getattr(sent, 'timeout', 60) or 60
+                "timeout": timeout
             }
             self.statuses[account_id] = "Waiting for OTP"
             return {
@@ -131,7 +136,7 @@ class TelegramManager:
                 "phone_code_hash": sent.phone_code_hash,
                 "delivery_type": delivery_type,
                 "delivery_text": delivery_text,
-                "timeout": getattr(sent, 'timeout', 60) or 60
+                "timeout": timeout
             }
 
         try:
@@ -157,13 +162,18 @@ class TelegramManager:
             try:
                 sent = await client(functions.auth.ResendCodeRequest(phone, phone_code_hash))
                 pending["phone_code_hash"] = sent.phone_code_hash
+                sent_type_name = type(sent.type).__name__
+                next_type_name = type(sent.next_type).__name__ if getattr(sent, 'next_type', None) else "None"
+                timeout = getattr(sent, 'timeout', 60) or 60
+                print(f"[Telegram][{account_id}] Resend requested for {phone}: type={sent_type_name}, next_type={next_type_name}, timeout={timeout}s")
+
                 delivery_type = "sms" if isinstance(sent.type, types.auth.SentCodeTypeSms) else "app"
                 delivery_text = f"Code resent via SMS to {phone}." if delivery_type == "sms" else "Code resent to your Telegram App."
                 return {
                     "success": True,
                     "delivery_type": delivery_type,
                     "delivery_text": delivery_text,
-                    "timeout": getattr(sent, 'timeout', 60) or 60
+                    "timeout": timeout
                 }
             except Exception as e:
                 return {"success": False, "error": str(e)}

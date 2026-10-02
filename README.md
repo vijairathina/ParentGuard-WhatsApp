@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/tandpfun/skill-icons/main/icons/WhatsApp.dark.svg" width="60" height="60" alt="WhatsApp" />
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/tandpfun/skill-icons/main/icons/Telegram.svg" width="60" height="60" alt="Telegram" />
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/tandpfun/skill-icons/main/icons/Instagram.svg" width="60" height="60" alt="Instagram" />
+  <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="56" height="56" alt="WhatsApp" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg" width="56" height="56" alt="Telegram" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="https://upload.wikimedia.org/wikipedia/commons/e/e7/Instagram_logo_2016.svg" width="56" height="56" alt="Instagram" />
 </p>
 
 <h1 align="center">🛡️ ParentGuard - Multi-Platform Messenger Guardian</h1>
