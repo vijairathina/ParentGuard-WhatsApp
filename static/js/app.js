@@ -30,6 +30,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const messagePanel = document.getElementById("message-panel");
     const messageForm = document.getElementById("message-form");
     const messageInput = document.getElementById("message-input");
+    const accountStatusIndicator = document.getElementById("account-status-indicator");
+
+    // In-Window QR Pane & Banner Elements (Right side of window)
+    const qrPane = document.getElementById("qr-pane");
+    const qrPaneLoading = document.getElementById("qr-pane-loading");
+    const qrPaneImage = document.getElementById("qr-pane-image");
+    const qrPaneStatusDot = document.getElementById("qr-pane-status-dot");
+    const qrPaneStatusText = document.getElementById("qr-pane-status-text");
+    const btnRefreshQrPane = document.getElementById("btn-refresh-qr-pane");
+    const sessionNoticeBanner = document.getElementById("session-notice-banner");
+    const btnBannerReconnect = document.getElementById("btn-banner-reconnect");
+
+    // Photo Lightbox Modal Elements
+    const photoLightboxModal = document.getElementById("photo-lightbox-modal");
+    const lightboxBackdrop = document.getElementById("lightbox-backdrop");
+    const btnLightboxClose = document.getElementById("btn-lightbox-close");
+    const lightboxImage = document.getElementById("lightbox-image");
+    const lightboxCaption = document.getElementById("lightbox-caption");
 
     // Add Account / QR Modal Elements
     const addAccountModal = document.getElementById("add-account-modal");
@@ -150,6 +168,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Test Gemini AI
         btnTestGemini.addEventListener("click", handleTestGemini);
+
+        // QR Pane & Reconnect Listeners
+        if (btnRefreshQrPane) {
+            btnRefreshQrPane.addEventListener("click", () => {
+                showQrPane(true);
+            });
+        }
+        if (btnBannerReconnect) {
+            btnBannerReconnect.addEventListener("click", () => {
+                showQrPane(true);
+            });
+        }
+        if (accountStatusIndicator) {
+            accountStatusIndicator.addEventListener("click", () => {
+                const acc = accounts.find(a => a.id === activeAccountId);
+                if (acc && acc.status !== "Connected") {
+                    showQrPane(true);
+                }
+            });
+        }
+
+        // Photo Lightbox Modal Listeners
+        if (btnLightboxClose) {
+            btnLightboxClose.addEventListener("click", closePhotoLightbox);
+        }
+        if (lightboxBackdrop) {
+            lightboxBackdrop.addEventListener("click", closePhotoLightbox);
+        }
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && photoLightboxModal && photoLightboxModal.style.display !== "none") {
+                closePhotoLightbox();
+            }
+        });
     }
 
     // --- SSE Event Stream Setup ---
@@ -172,6 +223,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // Handle QR Event
                 if (type === "qr") {
+                    if (account_id === activeAccountId) {
+                        const acc = accounts.find(a => a.id === account_id);
+                        if (acc) acc.qr = data.qr;
+                        qrPaneLoading.style.display = "none";
+                        qrPaneImage.src = `data:image/png;base64,${data.qr}`;
+                        qrPaneImage.style.display = "block";
+                        qrPaneStatusDot.className = "status-dot warning";
+                        qrPaneStatusText.innerText = "Scan QR with WhatsApp on Phone";
+                    }
                     if (account_id === qrSessionId) {
                         qrLoading.style.display = "none";
                         qrImage.src = `data:image/png;base64,${data.qr}`;
@@ -195,7 +255,15 @@ document.addEventListener("DOMContentLoaded", () => {
                     } else if (account_id === activeAccountId) {
                         updateActiveAccountUI();
                         if (data.status === "Connected") {
+                            hideQrPane();
+                            if (sessionNoticeBanner) sessionNoticeBanner.style.display = "none";
                             loadContacts();
+                        } else if (data.status === "Logged Out" || data.status === "Disconnected") {
+                            if (activeContactJid) {
+                                if (sessionNoticeBanner) sessionNoticeBanner.style.display = "flex";
+                            } else {
+                                showQrPane(false);
+                            }
                         }
                     }
                 }
@@ -342,33 +410,73 @@ document.addEventListener("DOMContentLoaded", () => {
             const name = activeAcc.name || "PG";
             activeAvatar.innerText = name.substring(0, 2).toUpperCase();
             
-            if (activeAcc.status !== "Connected") {
-                contactsList.innerHTML = `
-                    <div class="list-empty">
-                        <p>Status: <strong>${escapeHTML(activeAcc.status)}</strong></p>
-                        ${activeAcc.status === "Waiting for Scan" ? 
-                          `<button id="btn-reopen-qr" class="btn btn-primary">Scan QR Code</button>` : 
-                          `<button id="btn-reconnect-now" class="btn btn-primary">Reconnect Session</button>`}
-                    </div>`;
-                
-                const btnReopenQr = document.getElementById("btn-reopen-qr");
-                if (btnReopenQr) {
-                    btnReopenQr.addEventListener("click", () => {
-                        qrSessionId = activeAcc.id;
-                        openAddAccountModalDirect(activeAcc.qr);
-                    });
-                }
+            const isConnected = activeAcc.status === "Connected";
+            if (accountStatusIndicator) {
+                accountStatusIndicator.className = `account-status-badge ${isConnected ? 'status-connected' : 'status-reconnect'}`;
+                accountStatusIndicator.title = isConnected ? "Session Connected" : "Click to view QR code and reconnect";
+                accountStatusIndicator.innerHTML = isConnected 
+                    ? `<span class="status-dot online"></span> Connected`
+                    : `<span class="status-dot warning"></span> ⚡ ${escapeHTML(activeAcc.status)} (Scan QR)`;
+            }
 
-                const btnReconnectNow = document.getElementById("btn-reconnect-now");
-                if (btnReconnectNow) {
-                    btnReconnectNow.addEventListener("click", handleAccountLogin);
+            // Keep chat list on left side intact! Never wipe contactsList!
+            // Update right pane depending on session status:
+            if (!isConnected) {
+                if (!activeContactJid) {
+                    showQrPane(false);
+                } else if (sessionNoticeBanner) {
+                    sessionNoticeBanner.style.display = "flex";
                 }
+            } else {
+                hideQrPane();
+                if (sessionNoticeBanner) sessionNoticeBanner.style.display = "none";
             }
         } else {
             btnDeleteAccount.disabled = true;
             btnOpenSettings.disabled = true;
             btnOpenLogs.disabled = true;
             activeAvatar.innerText = "PG";
+            if (accountStatusIndicator) {
+                accountStatusIndicator.className = "account-status-badge";
+                accountStatusIndicator.innerHTML = "";
+            }
+        }
+    }
+
+    function showQrPane(triggerReconnect = true) {
+        if (!activeAccountId) return;
+        emptyState.style.display = "none";
+        chatWindow.style.display = "none";
+        if (qrPane) qrPane.style.display = "flex";
+
+        if (qrPaneLoading) qrPaneLoading.style.display = "flex";
+        if (qrPaneImage) qrPaneImage.style.display = "none";
+
+        const acc = accounts.find(a => a.id === activeAccountId);
+        if (acc && acc.qr) {
+            if (qrPaneImage) {
+                qrPaneImage.src = `data:image/png;base64,${acc.qr}`;
+                qrPaneImage.style.display = "block";
+            }
+            if (qrPaneLoading) qrPaneLoading.style.display = "none";
+            if (qrPaneStatusDot) qrPaneStatusDot.className = "status-dot warning";
+            if (qrPaneStatusText) qrPaneStatusText.innerText = "Scan QR Code with Phone";
+        } else {
+            if (qrPaneStatusDot) qrPaneStatusDot.className = "status-dot warning";
+            if (qrPaneStatusText) qrPaneStatusText.innerText = "Requesting secure QR session...";
+            if (triggerReconnect) {
+                fetch(`/api/accounts/${activeAccountId}/login`, { method: "POST" })
+                    .catch(err => console.error("Error requesting login QR:", err));
+            }
+        }
+    }
+
+    function hideQrPane() {
+        if (qrPane) qrPane.style.display = "none";
+        if (activeContactJid) {
+            chatWindow.style.display = "flex";
+        } else {
+            emptyState.style.display = "flex";
         }
     }
 
@@ -1100,14 +1208,28 @@ document.addEventListener("DOMContentLoaded", () => {
         chatAvatar.className = contact.is_group ? "avatar group-avatar" : "avatar";
 
         emptyState.style.display = "none";
+        hideQrPane();
         chatWindow.style.display = "flex";
+
+        // Check if active account is logged out/disconnected and show banner
+        const acc = accounts.find(a => a.id === activeAccountId);
+        if (acc && acc.status !== "Connected" && sessionNoticeBanner) {
+            sessionNoticeBanner.style.display = "flex";
+        } else if (sessionNoticeBanner) {
+            sessionNoticeBanner.style.display = "none";
+        }
 
         loadMessages();
     }
 
     function hideChatWindow() {
         chatWindow.style.display = "none";
-        emptyState.style.display = "flex";
+        const acc = accounts.find(a => a.id === activeAccountId);
+        if (acc && acc.status !== "Connected") {
+            showQrPane(false);
+        } else {
+            emptyState.style.display = "flex";
+        }
     }
 
     async function loadMessages() {
@@ -1229,19 +1351,43 @@ document.addEventListener("DOMContentLoaded", () => {
         messagePanel.appendChild(bubble);
     }
 
+    // Lightbox modal controls
+    function openPhotoLightbox(src, captionText = "") {
+        if (!photoLightboxModal || !lightboxImage) return;
+        lightboxImage.src = src;
+        if (lightboxCaption) {
+            lightboxCaption.textContent = captionText;
+            lightboxCaption.style.display = captionText ? "block" : "none";
+        }
+        photoLightboxModal.style.display = "flex";
+        document.body.style.overflow = "hidden";
+    }
+    window.openPhotoLightbox = openPhotoLightbox;
+
+    function closePhotoLightbox() {
+        if (!photoLightboxModal) return;
+        photoLightboxModal.style.display = "none";
+        if (lightboxImage) lightboxImage.src = "";
+        document.body.style.overflow = "";
+    }
+    window.closePhotoLightbox = closePhotoLightbox;
+
     function renderAttachmentHtml(attachment) {
         if (!attachment) return '';
 
         const type = attachment.type || 'attachment';
-        const mediaUrl = attachment.local_url || attachment.url || '';
-        const preview = attachment.preview || '';
+        const localUrl = attachment.local_url || '';
+        // WhatsApp attachment.url points to mmg.whatsapp.net which requires WhatsApp authorization and returns 403.
+        // We prioritize local_url (disk storage) or inline base64 preview (data:image/jpeg;base64,...).
+        const preview = (attachment.preview && attachment.preview.startsWith('data:image')) ? attachment.preview : '';
         const caption = attachment.caption ? `<div class="attachment-caption">${escapeHTML(attachment.caption)}</div>` : '';
 
         // 1. Audio / Voice Note Player
         if (type === 'audio') {
+            const audioSrc = localUrl || (attachment.url && !attachment.url.includes('whatsapp.net') ? attachment.url : '');
             return `
                 <div class="media-container audio-media">
-                    <audio controls preload="metadata" src="${escapeHTML(mediaUrl)}">
+                    <audio controls preload="metadata" src="${escapeHTML(audioSrc)}">
                         Your browser does not support audio element.
                     </audio>
                     <div class="audio-info">
@@ -1255,20 +1401,48 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // 2. Image / Photo
         if (type === 'image') {
-            const displaySrc = mediaUrl || preview;
-            return `
-                <div class="media-container image-media">
-                    <img src="${escapeHTML(displaySrc)}" class="chat-photo" loading="lazy" alt="WhatsApp Photo" onclick="window.open(this.src, '_blank')">
-                    ${caption}
-                </div>
-            `;
+            const displaySrc = localUrl || preview;
+            if (displaySrc) {
+                return `
+                    <div class="media-container image-media">
+                        <div class="photo-card-wrapper" onclick="window.openPhotoLightbox('${escapeHTML(displaySrc)}', '${escapeHTML(attachment.caption || '')}')" title="Click to view full image">
+                            <img src="${escapeHTML(displaySrc)}" class="chat-photo" loading="lazy" alt="WhatsApp Photo">
+                            <div class="photo-hover-overlay">
+                                <span class="photo-zoom-badge">🔍 Click to Zoom</span>
+                            </div>
+                        </div>
+                        ${caption}
+                    </div>
+                `;
+            } else {
+                return `
+                    <div class="media-container image-media">
+                        <div class="image-placeholder-card">
+                            <span class="img-icon">📷</span>
+                            <div class="img-details">
+                                <span class="img-title">WhatsApp Photo</span>
+                                <span class="img-subtitle">Media preview pending download</span>
+                            </div>
+                        </div>
+                        ${caption}
+                    </div>
+                `;
+            }
         }
 
         // 3. Video Player
         if (type === 'video') {
+            const videoSrc = localUrl || (attachment.url && !attachment.url.includes('whatsapp.net') ? attachment.url : '');
             return `
                 <div class="media-container video-media">
-                    <video controls preload="metadata" src="${escapeHTML(mediaUrl)}"></video>
+                    ${videoSrc ? `<video controls preload="metadata" src="${escapeHTML(videoSrc)}"></video>` : `
+                    <div class="image-placeholder-card">
+                        <span class="img-icon">🎥</span>
+                        <div class="img-details">
+                            <span class="img-title">WhatsApp Video</span>
+                            <span class="img-subtitle">${attachment.duration ? formatDuration(attachment.duration) : 'Video file'}</span>
+                        </div>
+                    </div>`}
                     ${caption}
                 </div>
             `;
@@ -1277,12 +1451,13 @@ document.addEventListener("DOMContentLoaded", () => {
         // 4. Document / File
         if (type === 'document') {
             const fileName = attachment.file_name || 'Document';
+            const docUrl = localUrl || (attachment.url && !attachment.url.includes('whatsapp.net') ? attachment.url : '');
             return `
                 <div class="media-container document-media">
                     <span class="doc-icon">📄</span>
                     <div class="doc-info">
                         <span class="doc-name">${escapeHTML(fileName)}</span>
-                        ${mediaUrl ? `<a href="${escapeHTML(mediaUrl)}" download="${escapeHTML(fileName)}" class="btn-download-doc">Download File</a>` : ''}
+                        ${docUrl ? `<a href="${escapeHTML(docUrl)}" download="${escapeHTML(fileName)}" class="btn-download-doc">Download File</a>` : ''}
                     </div>
                 </div>
                 ${caption}
@@ -1290,12 +1465,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // 5. Sticker
-        if (type === 'sticker' && (mediaUrl || preview)) {
-            return `
-                <div class="media-container" style="max-width: 140px;">
-                    <img src="${escapeHTML(mediaUrl || preview)}" style="width: 100%; border-radius: 6px;" alt="Sticker">
-                </div>
-            `;
+        if (type === 'sticker') {
+            const stickerSrc = localUrl || preview;
+            if (stickerSrc) {
+                return `
+                    <div class="media-container sticker-media" style="max-width: 140px;">
+                        <img src="${escapeHTML(stickerSrc)}" style="width: 100%; border-radius: 6px;" alt="Sticker">
+                    </div>
+                `;
+            }
         }
 
         return '';

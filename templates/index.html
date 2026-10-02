@@ -120,8 +120,71 @@
                 </div>
             </div>
 
+            <!-- In-Window QR Code Linking Pane (Right Side of Window) -->
+            <div class="qr-pane" id="qr-pane" style="display: none;">
+                <div class="qr-pane-card">
+                    <div class="qr-pane-header">
+                        <div class="qr-badge-status" id="qr-pane-status-badge">
+                            <span class="status-dot warning" id="qr-pane-status-dot"></span>
+                            <span id="qr-pane-status-text">Scan QR Code to Reconnect</span>
+                        </div>
+                        <h2>Link WhatsApp Session</h2>
+                        <p class="qr-pane-subtitle">Scan this QR code with WhatsApp on your phone to resume real-time incoming & outgoing messages.</p>
+                    </div>
+
+                    <div class="qr-pane-body">
+                        <div class="qr-box-wrapper">
+                            <div class="qr-glow-effect"></div>
+                            <div class="qr-box" id="qr-pane-box">
+                                <div class="qr-loading-spinner" id="qr-pane-loading">
+                                    <div class="spinner"></div>
+                                    <span>Generating QR session...</span>
+                                </div>
+                                <img id="qr-pane-image" class="qr-image" style="display: none;" alt="WhatsApp Login QR Code">
+                            </div>
+                        </div>
+
+                        <div class="qr-steps">
+                            <div class="qr-step-item">
+                                <span class="step-num">1</span>
+                                <div class="step-desc">Open <strong>WhatsApp</strong> on your mobile phone</div>
+                            </div>
+                            <div class="qr-step-item">
+                                <span class="step-num">2</span>
+                                <div class="step-desc">Tap <strong>Menu ⋮</strong> (Android) or <strong>Settings ⚙️</strong> (iPhone)</div>
+                            </div>
+                            <div class="qr-step-item">
+                                <span class="step-num">3</span>
+                                <div class="step-desc">Select <strong>Linked Devices</strong> & tap <strong>Link a Device</strong></div>
+                            </div>
+                            <div class="qr-step-item">
+                                <span class="step-num">4</span>
+                                <div class="step-desc">Point your phone camera at this screen to link</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="qr-pane-footer">
+                        <button type="button" id="btn-refresh-qr-pane" class="btn-refresh-qr">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                            Refresh QR Code
+                        </button>
+                        <span class="qr-auto-note">⚡ Live sync starts automatically after scan</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Active Chat Window -->
             <div class="chat-window" id="chat-window" style="display: none;">
+                <!-- Session Disconnected Top Banner -->
+                <div class="session-notice-banner" id="session-notice-banner" style="display: none;">
+                    <div class="notice-content">
+                        <span class="notice-icon">⚠️</span>
+                        <span>WhatsApp session is logged out. Showing offline chat history.</span>
+                    </div>
+                    <button type="button" class="btn-notice-reconnect" id="btn-banner-reconnect">Scan QR Code</button>
+                </div>
+
                 <!-- Chat Header -->
                 <header class="chat-header">
                     <div class="chat-contact-info">
@@ -456,6 +519,20 @@
                 <button type="button" class="btn btn-secondary" id="btn-cancel-settings">Close</button>
                 <button type="button" class="btn btn-primary" id="btn-save-settings">Save Changes</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Photo Lightbox Modal -->
+    <div id="photo-lightbox-modal" class="photo-lightbox-modal" style="display: none;">
+        <div class="lightbox-backdrop" id="lightbox-backdrop"></div>
+        <div class="lightbox-content">
+            <button type="button" class="btn-lightbox-close" id="btn-lightbox-close" title="Close Photo">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+            <div class="lightbox-img-wrapper">
+                <img id="lightbox-image" src="" alt="WhatsApp Photo">
+            </div>
+            <div id="lightbox-caption" class="lightbox-caption"></div>
         </div>
     </div>
 </body>
