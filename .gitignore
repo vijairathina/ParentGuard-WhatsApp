@@ -33,6 +33,8 @@ accounts/contacts_*.json
 accounts/groups_*.json
 accounts/audit_log_*.json
 accounts/settings_*.json
+accounts/scheduled_messages.json
+accounts/webhooks.json
 *.db
 *.db-wal
 *.db-shm

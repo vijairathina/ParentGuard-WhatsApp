@@ -94,6 +94,43 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnRegisterWebhook = document.getElementById("btn-register-webhook");
     const webhooksListContainer = document.getElementById("webhooks-list");
 
+    // Scheduled Messages Elements
+    const btnOpenSchedules = document.getElementById("btn-open-schedules");
+    const schedulesCounterBadge = document.getElementById("schedules-counter-badge");
+    const btnChatSchedule = document.getElementById("btn-chat-schedule");
+    const schedulesModal = document.getElementById("schedules-modal");
+    const btnCloseSchedules = document.getElementById("btn-close-schedules");
+    const btnCancelCreateSched = document.getElementById("btn-cancel-create-sched");
+    const btnTopCreateSched = document.getElementById("btn-top-create-sched");
+    const btnTabCreateSchedule = document.getElementById("btn-tab-create-schedule");
+    const schedulesCardsContainer = document.getElementById("schedules-cards-container");
+    const formSchedule = document.getElementById("form-schedule");
+    const schedEditId = document.getElementById("sched-edit-id");
+    const schedTitle = document.getElementById("sched-title");
+    const schedCategory = document.getElementById("sched-category");
+    const schedRecipientSelect = document.getElementById("sched-recipient-select");
+    const schedCustomTarget = document.getElementById("sched-custom-target");
+    const schedAnnualMonth = document.getElementById("sched-annual-month");
+    const schedAnnualDay = document.getElementById("sched-annual-day");
+    const schedDatetimePicker = document.getElementById("sched-datetime-picker");
+    const schedTimePicker = document.getElementById("sched-time-picker");
+    const groupAnnualDate = document.getElementById("group-annual-date");
+    const groupOnceDatetime = document.getElementById("group-once-datetime");
+    const groupTimeOfDay = document.getElementById("group-time-of-day");
+    const groupWeeklyDays = document.getElementById("group-weekly-days");
+    const schedMessageText = document.getElementById("sched-message-text");
+    const schedLivePreview = document.getElementById("sched-live-preview");
+    const schedEnabled = document.getElementById("sched-enabled");
+    const templatesLibraryGrid = document.getElementById("templates-library-grid");
+    const btnInsertName = document.getElementById("btn-insert-name");
+    const btnInsertDate = document.getElementById("btn-insert-date");
+    const btnInsertTime = document.getElementById("btn-insert-time");
+    const btnInsertDay = document.getElementById("btn-insert-day");
+
+    let schedules = [];
+    let sampleTemplates = {};
+    let activeSchedFilter = "all";
+
     // Initialize App
     init();
 
@@ -201,6 +238,86 @@ document.addEventListener("DOMContentLoaded", () => {
                 closePhotoLightbox();
             }
         });
+
+        // Scheduled Messages Listeners
+        if (btnOpenSchedules) {
+            btnOpenSchedules.addEventListener("click", () => openSchedulesModal("tab-schedules-list"));
+        }
+        if (btnCloseSchedules) {
+            btnCloseSchedules.addEventListener("click", closeSchedulesModal);
+        }
+        if (btnCancelCreateSched) {
+            btnCancelCreateSched.addEventListener("click", () => switchSchedulesTab("tab-schedules-list"));
+        }
+        if (btnTopCreateSched) {
+            btnTopCreateSched.addEventListener("click", () => openCreateScheduleTab());
+        }
+        if (btnTabCreateSchedule) {
+            btnTabCreateSchedule.addEventListener("click", () => openCreateScheduleTab());
+        }
+        if (btnChatSchedule) {
+            btnChatSchedule.addEventListener("click", handleChatScheduleClick);
+        }
+        if (formSchedule) {
+            formSchedule.addEventListener("submit", handleSaveSchedule);
+        }
+
+        // Schedule Modal Tab Navigation
+        document.querySelectorAll("#schedules-modal .modal-tabs .tab-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const targetTab = btn.getAttribute("data-tab");
+                switchSchedulesTab(targetTab);
+            });
+        });
+
+        // Recurrence radio buttons change
+        document.querySelectorAll("input[name='sched-type']").forEach(radio => {
+            radio.addEventListener("change", handleScheduleTypeChange);
+        });
+
+        // Variable insertion helpers
+        if (btnInsertName) btnInsertName.addEventListener("click", () => insertScheduleVariable("{name}"));
+        if (btnInsertDate) btnInsertDate.addEventListener("click", () => insertScheduleVariable("{date}"));
+        if (btnInsertTime) btnInsertTime.addEventListener("click", () => insertScheduleVariable("{time}"));
+        if (btnInsertDay) btnInsertDay.addEventListener("click", () => insertScheduleVariable("{day}"));
+
+        if (schedMessageText) {
+            schedMessageText.addEventListener("input", updateScheduleLivePreview);
+        }
+        if (schedRecipientSelect) {
+            schedRecipientSelect.addEventListener("change", updateScheduleLivePreview);
+        }
+        if (schedCustomTarget) {
+            schedCustomTarget.addEventListener("input", updateScheduleLivePreview);
+        }
+
+        // Category filter pills in schedules modal
+        document.querySelectorAll(".sched-pill").forEach(pill => {
+            pill.addEventListener("click", () => {
+                document.querySelectorAll(".sched-pill").forEach(p => p.classList.remove("active"));
+                pill.classList.add("active");
+                activeSchedFilter = pill.getAttribute("data-cat") || "all";
+                renderSchedulesList();
+            });
+        });
+
+        // Quick template chips
+        document.querySelectorAll(".template-quick-chips .chip-btn").forEach(chip => {
+            chip.addEventListener("click", () => {
+                const tplCat = chip.getAttribute("data-tpl");
+                loadCategoryTemplateIntoForm(tplCat);
+            });
+        });
+
+        // Category select change
+        if (schedCategory) {
+            schedCategory.addEventListener("change", (e) => {
+                loadCategoryTemplateIntoForm(e.target.value);
+            });
+        }
+
+        loadSchedules();
+        loadSampleTemplates();
     }
 
     // --- SSE Event Stream Setup ---
@@ -220,6 +337,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 const { event: type, account_id, data } = payload;
+
+                // Handle Scheduled Message Sent Event
+                if (type === "scheduled_message_sent") {
+                    showSecurityToast(`⏰ Automated Schedule Sent: ${escapeHTML(data.title)}`, "info");
+                    loadSchedules();
+                }
 
                 // Handle QR Event
                 if (type === "qr") {
@@ -1712,6 +1835,505 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         return formatPhoneNumber(jid);
     }
+
+    // ========================================================
+    // ADVANCED SCHEDULED & AUTOMATED MESSAGES LOGIC
+    // ========================================================
+    function openSchedulesModal(defaultTab = "tab-schedules-list") {
+        if (!schedulesModal) return;
+        schedulesModal.style.display = "flex";
+        populateContactsDropdown();
+        switchSchedulesTab(defaultTab);
+        loadSchedules();
+    }
+
+    function closeSchedulesModal() {
+        if (!schedulesModal) return;
+        schedulesModal.style.display = "none";
+    }
+
+    function switchSchedulesTab(tabId) {
+        document.querySelectorAll("#schedules-modal .modal-tabs .tab-btn").forEach(btn => {
+            btn.classList.toggle("active", btn.getAttribute("data-tab") === tabId);
+        });
+        document.querySelectorAll("#schedules-modal .modal-body .tab-pane").forEach(pane => {
+            pane.classList.toggle("active", pane.id === tabId);
+        });
+    }
+
+    function populateContactsDropdown() {
+        if (!schedRecipientSelect) return;
+        const currentVal = schedRecipientSelect.value;
+        schedRecipientSelect.innerHTML = '<option value="">-- Choose from WhatsApp Contacts / Groups --</option>';
+
+        // Sort contacts alphabetically
+        const sorted = [...contacts].sort((a, b) => {
+            const na = getChatDisplayName(a).toLowerCase();
+            const nb = getChatDisplayName(b).toLowerCase();
+            return na.localeCompare(nb);
+        });
+
+        sorted.forEach(c => {
+            const name = getChatDisplayName(c);
+            const opt = document.createElement("option");
+            opt.value = c.jid;
+            opt.textContent = `${name} (${c.is_group ? 'Group' : (c.phone_number || c.jid.split('@')[0])})`;
+            schedRecipientSelect.appendChild(opt);
+        });
+
+        if (currentVal) schedRecipientSelect.value = currentVal;
+    }
+
+    async function loadSchedules() {
+        try {
+            const res = await fetch("/api/schedules");
+            schedules = await res.json();
+            
+            // Update sidebar badge
+            const activeCount = schedules.filter(s => s.enabled).length;
+            if (schedulesCounterBadge) {
+                schedulesCounterBadge.textContent = activeCount;
+                schedulesCounterBadge.style.display = activeCount > 0 ? "flex" : "none";
+            }
+
+            renderSchedulesList();
+        } catch (err) {
+            console.error("Error loading schedules:", err);
+        }
+    }
+
+    function renderSchedulesList() {
+        if (!schedulesCardsContainer) return;
+        schedulesCardsContainer.innerHTML = "";
+
+        let filtered = schedules;
+        if (activeSchedFilter !== "all") {
+            filtered = schedules.filter(s => s.category === activeSchedFilter);
+        }
+
+        if (filtered.length === 0) {
+            schedulesCardsContainer.innerHTML = `
+                <div class="list-empty" style="padding: 30px;">
+                    <div style="font-size: 36px; margin-bottom: 8px;">⏰</div>
+                    <p style="font-weight: 600; color: var(--text-primary);">No scheduled messages in this category</p>
+                    <p class="secondary-text">Click <strong>"+ Add New Schedule"</strong> or browse the <strong>Sample Templates Library</strong>.</p>
+                </div>
+            `;
+            return;
+        }
+
+        filtered.forEach(s => {
+            const card = document.createElement("div");
+            card.className = `schedule-card ${s.enabled ? '' : 'disabled'}`;
+            card.id = `sched-card-${s.id}`;
+
+            const catMap = {
+                birthday: { badge: "🎂 Birthday Wish", cls: "bday" },
+                anniversary: { badge: "💍 Anniversary", cls: "anni" },
+                morning: { badge: "🌅 Morning", cls: "morn" },
+                afternoon: { badge: "☀️ Afternoon", cls: "morn" },
+                night: { badge: "🌙 Night", cls: "anni" },
+                festival: { badge: "🪔 Festival", cls: "fest" },
+                reminder: { badge: "💧 Reminder", cls: "morn" },
+                custom: { badge: "✨ Custom", cls: "" }
+            };
+            const catInfo = catMap[s.category] || { badge: s.category || "Custom", cls: "" };
+
+            // Format timing description
+            let timingDesc = "";
+            if (s.schedule_type === "annual") {
+                const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                const mName = months[(s.annual_month || 1) - 1];
+                timingDesc = `📅 Yearly on ${s.annual_day} ${mName} at ${s.time_of_day || '09:00'}`;
+            } else if (s.schedule_type === "daily") {
+                timingDesc = `🔁 Daily at ${s.time_of_day || '08:00'}`;
+            } else if (s.schedule_type === "weekly") {
+                const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+                const daysStr = (s.days_of_week || []).map(d => dayNames[d]).join(", ");
+                timingDesc = `🗓️ Weekly (${daysStr || 'Mon'}) at ${s.time_of_day || '09:00'}`;
+            } else if (s.schedule_type === "once") {
+                timingDesc = `⏰ Once at ${s.scheduled_datetime || 'Specified date/time'}`;
+            }
+
+            // Next run time
+            let nextRunStr = "Pending";
+            if (s.next_run) {
+                const d = new Date(s.next_run * 1000);
+                nextRunStr = d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            }
+
+            // Recipients label
+            let recipientsLabel = "No recipient set";
+            if (s.recipients && s.recipients.length > 0) {
+                recipientsLabel = s.recipients.map(r => r.name || r.jid || r.phone).join(", ");
+            }
+
+            card.innerHTML = `
+                <div class="schedule-card-header">
+                    <div class="schedule-title-area">
+                        <span class="schedule-cat-badge ${catInfo.cls}">${catInfo.badge}</span>
+                        <h4>${escapeHTML(s.title || 'Untitled Schedule')}</h4>
+                    </div>
+                    <label class="switch-control" title="Toggle Enable / Disable">
+                        <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="window.handleToggleSchedule('${s.id}', ${s.enabled})">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="schedule-card-body">
+                    ${escapeHTML(s.message_template || '')}
+                </div>
+
+                <div class="schedule-card-meta">
+                    <div>
+                        <span>To: <strong class="sched-target-tag">${escapeHTML(recipientsLabel)}</strong></span>
+                        <span class="sched-timing-tag ms-2">${timingDesc}</span>
+                    </div>
+                    <div>
+                        <span style="color: ${s.enabled ? 'var(--wa-green)' : 'var(--text-secondary)'}; font-size: 11.5px;">
+                            ${s.enabled ? '⏳ Next: ' + nextRunStr : '⏸️ Paused'}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                    <small class="secondary-text" style="font-size: 11px;">
+                        Status: <strong>${escapeHTML(s.last_status || 'Scheduled')}</strong>
+                        ${s.sent_count ? ` • Sent ${s.sent_count} time(s)` : ''}
+                    </small>
+                    <div class="sched-card-actions">
+                        <button type="button" class="btn-sched-action" onclick="window.handleTestSendSchedule('${s.id}')" title="Send a test message right now">
+                            ⚡ Send Test Now
+                        </button>
+                        <button type="button" class="btn-sched-action" onclick="window.handleEditSchedule('${s.id}')">
+                            ✏️ Edit
+                        </button>
+                        <button type="button" class="btn-sched-action danger" onclick="window.handleDeleteSchedule('${s.id}')">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+            schedulesCardsContainer.appendChild(card);
+        });
+    }
+
+    async function loadSampleTemplates() {
+        try {
+            const res = await fetch("/api/schedules/templates");
+            sampleTemplates = await res.json();
+            renderTemplatesLibrary();
+        } catch (err) {
+            console.error("Error loading sample templates:", err);
+        }
+    }
+
+    function renderTemplatesLibrary() {
+        if (!templatesLibraryGrid) return;
+        templatesLibraryGrid.innerHTML = "";
+
+        Object.keys(sampleTemplates).forEach(catKey => {
+            const cat = sampleTemplates[catKey];
+            (cat.templates || []).forEach(tpl => {
+                const card = document.createElement("div");
+                card.className = "template-library-card";
+                card.innerHTML = `
+                    <div>
+                        <div class="tpl-header">
+                            <span class="tpl-name">${escapeHTML(tpl.name)}</span>
+                            <span class="schedule-cat-badge" style="font-size: 10px;">${escapeHTML(cat.title)}</span>
+                        </div>
+                        <div class="tpl-text mt-2">${escapeHTML(tpl.text)}</div>
+                    </div>
+                    <button type="button" class="btn-use-tpl" onclick="window.useTemplateFromLibrary('${catKey}', '${tpl.id}')">
+                        Use Template ➔
+                    </button>
+                `;
+                templatesLibraryGrid.appendChild(card);
+            });
+        });
+    }
+
+    window.useTemplateFromLibrary = function(catKey, tplId) {
+        const cat = sampleTemplates[catKey];
+        if (!cat) return;
+        const tpl = (cat.templates || []).find(t => t.id === tplId);
+        if (!tpl) return;
+
+        openCreateScheduleTab();
+        schedCategory.value = catKey;
+        schedTitle.value = tpl.name;
+        schedMessageText.value = tpl.text;
+        
+        // Recommended frequency
+        const recType = cat.default_type || "daily";
+        const radio = document.querySelector(`input[name='sched-type'][value='${recType}']`);
+        if (radio) radio.checked = true;
+        
+        if (schedTimePicker && cat.default_time) {
+            schedTimePicker.value = cat.default_time;
+        }
+
+        handleScheduleTypeChange();
+        updateScheduleLivePreview();
+        switchSchedulesTab("tab-schedules-create");
+    };
+
+    function loadCategoryTemplateIntoForm(catKey) {
+        const cat = sampleTemplates[catKey];
+        if (!cat || !cat.templates || cat.templates.length === 0) return;
+        const tpl = cat.templates[0];
+
+        schedCategory.value = catKey;
+        if (!schedTitle.value || schedTitle.value === "Untitled Schedule") {
+            schedTitle.value = tpl.name;
+        }
+        schedMessageText.value = tpl.text;
+
+        const recType = cat.default_type || "daily";
+        const radio = document.querySelector(`input[name='sched-type'][value='${recType}']`);
+        if (radio) radio.checked = true;
+        if (schedTimePicker && cat.default_time) {
+            schedTimePicker.value = cat.default_time;
+        }
+
+        handleScheduleTypeChange();
+        updateScheduleLivePreview();
+    }
+
+    function handleScheduleTypeChange() {
+        const selected = document.querySelector("input[name='sched-type']:checked")?.value || "annual";
+        if (groupAnnualDate) groupAnnualDate.style.display = selected === "annual" ? "block" : "none";
+        if (groupOnceDatetime) groupOnceDatetime.style.display = selected === "once" ? "block" : "none";
+        if (groupTimeOfDay) groupTimeOfDay.style.display = selected !== "once" ? "block" : "none";
+        if (groupWeeklyDays) groupWeeklyDays.style.display = selected === "weekly" ? "block" : "none";
+    }
+
+    function insertScheduleVariable(varTag) {
+        if (!schedMessageText) return;
+        const start = schedMessageText.selectionStart || 0;
+        const end = schedMessageText.selectionEnd || 0;
+        const text = schedMessageText.value;
+        schedMessageText.value = text.substring(0, start) + varTag + text.substring(end);
+        schedMessageText.focus();
+        schedMessageText.selectionStart = schedMessageText.selectionEnd = start + varTag.length;
+        updateScheduleLivePreview();
+    }
+
+    function updateScheduleLivePreview() {
+        if (!schedLivePreview || !schedMessageText) return;
+        const raw = schedMessageText.value || "Type message above...";
+        
+        let recipientName = "Friend";
+        if (schedRecipientSelect && schedRecipientSelect.value) {
+            const contact = contacts.find(c => c.jid === schedRecipientSelect.value);
+            if (contact) recipientName = getChatDisplayName(contact);
+        } else if (schedCustomTarget && schedCustomTarget.value) {
+            recipientName = schedCustomTarget.value.trim();
+        }
+
+        const now = new Date();
+        const dateStr = now.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const dayStr = now.toLocaleDateString([], { weekday: 'long' });
+
+        let rendered = raw.replace(/{name}/g, recipientName)
+                          .replace(/{date}/g, dateStr)
+                          .replace(/{time}/g, timeStr)
+                          .replace(/{day}/g, dayStr);
+
+        schedLivePreview.textContent = rendered;
+    }
+
+    function openCreateScheduleTab(prefillTarget = "", prefillName = "") {
+        if (schedEditId) schedEditId.value = "";
+        if (formSchedule) formSchedule.reset();
+        populateContactsDropdown();
+
+        if (prefillTarget && schedRecipientSelect) {
+            schedRecipientSelect.value = prefillTarget;
+        }
+
+        // Default to Birthday template
+        loadCategoryTemplateIntoForm("birthday");
+        handleScheduleTypeChange();
+        updateScheduleLivePreview();
+        switchSchedulesTab("tab-schedules-create");
+    }
+
+    function handleChatScheduleClick() {
+        if (!activeContactJid) {
+            openSchedulesModal("tab-schedules-create");
+            return;
+        }
+        const contact = contacts.find(c => c.jid === activeContactJid);
+        const name = contact ? getChatDisplayName(contact) : "";
+        openSchedulesModal("tab-schedules-create");
+        openCreateScheduleTab(activeContactJid, name);
+    }
+
+    async function handleSaveSchedule(e) {
+        e.preventDefault();
+
+        const editId = schedEditId ? schedEditId.value.trim() : "";
+        const title = schedTitle.value.trim() || "Untitled Schedule";
+        const category = schedCategory.value || "custom";
+        const schedType = document.querySelector("input[name='sched-type']:checked")?.value || "annual";
+        const timeOfDay = schedTimePicker ? schedTimePicker.value : "09:00";
+        const annualMonth = schedAnnualMonth ? parseInt(schedAnnualMonth.value) : 1;
+        const annualDay = schedAnnualDay ? parseInt(schedAnnualDay.value) : 1;
+        const schedDatetime = schedDatetimePicker ? schedDatetimePicker.value : "";
+        const messageTemplate = schedMessageText.value.trim();
+        const enabled = schedEnabled ? schedEnabled.checked : true;
+
+        const daysOfWeek = [];
+        document.querySelectorAll("input[name='sched-day']:checked").forEach(cb => {
+            daysOfWeek.push(parseInt(cb.value));
+        });
+
+        // Determine recipient(s)
+        const recipients = [];
+        if (schedRecipientSelect && schedRecipientSelect.value) {
+            const contact = contacts.find(c => c.jid === schedRecipientSelect.value);
+            recipients.push({
+                jid: schedRecipientSelect.value,
+                name: contact ? getChatDisplayName(contact) : schedRecipientSelect.value.split('@')[0]
+            });
+        } else if (schedCustomTarget && schedCustomTarget.value.trim()) {
+            recipients.push({
+                phone: schedCustomTarget.value.trim(),
+                name: schedCustomTarget.value.trim()
+            });
+        }
+
+        if (recipients.length === 0) {
+            alert("Please select a WhatsApp contact or type a recipient phone number.");
+            return;
+        }
+
+        if (!messageTemplate) {
+            alert("Please enter a message content.");
+            return;
+        }
+
+        const payload = {
+            title,
+            category,
+            schedule_type: schedType,
+            time_of_day: timeOfDay,
+            annual_month: annualMonth,
+            annual_day: annualDay,
+            scheduled_datetime: schedDatetime,
+            days_of_week: daysOfWeek,
+            account_id: activeAccountId || "any",
+            recipients,
+            message_template: messageTemplate,
+            enabled
+        };
+
+        try {
+            const url = editId ? `/api/schedules/${editId}` : "/api/schedules";
+            const method = editId ? "PUT" : "POST";
+            const res = await fetch(url, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                showSecurityToast(editId ? "Schedule updated successfully!" : "Schedule created successfully!", "info");
+                switchSchedulesTab("tab-schedules-list");
+                loadSchedules();
+            } else {
+                alert("Error saving schedule: " + (data.error || "Unknown error"));
+            }
+        } catch (err) {
+            console.error("Error saving schedule:", err);
+            alert("Failed to save schedule: " + err.message);
+        }
+    }
+
+    window.handleToggleSchedule = async function(schedId, currentVal) {
+        try {
+            const res = await fetch(`/api/schedules/${schedId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled: !currentVal })
+            });
+            const data = await res.json();
+            if (data.success) {
+                loadSchedules();
+            }
+        } catch (err) {
+            console.error("Error toggling schedule:", err);
+        }
+    };
+
+    window.handleDeleteSchedule = async function(schedId) {
+        if (!confirm("Are you sure you want to delete this scheduled message?")) return;
+        try {
+            const res = await fetch(`/api/schedules/${schedId}`, { method: "DELETE" });
+            const data = await res.json();
+            if (data.success) {
+                showSecurityToast("Schedule deleted.", "info");
+                loadSchedules();
+            }
+        } catch (err) {
+            console.error("Error deleting schedule:", err);
+        }
+    };
+
+    window.handleTestSendSchedule = async function(schedId) {
+        try {
+            showSecurityToast("Sending test message...", "info");
+            const res = await fetch(`/api/schedules/${schedId}/test`, { method: "POST" });
+            const data = await res.json();
+            if (data.success) {
+                showSecurityToast(`Test message sent successfully (${data.sent_count} delivered)!`, "info");
+                loadSchedules();
+            } else {
+                alert("Error sending test: " + (data.error || "Failed"));
+            }
+        } catch (err) {
+            console.error("Error sending test:", err);
+            alert("Error sending test: " + err.message);
+        }
+    };
+
+    window.handleEditSchedule = function(schedId) {
+        const sched = schedules.find(s => s.id === schedId);
+        if (!sched) return;
+
+        openCreateScheduleTab();
+        schedEditId.value = sched.id;
+        schedTitle.value = sched.title || "";
+        schedCategory.value = sched.category || "custom";
+        schedMessageText.value = sched.message_template || "";
+        if (schedEnabled) schedEnabled.checked = Boolean(sched.enabled);
+
+        // Recurrence
+        const radio = document.querySelector(`input[name='sched-type'][value='${sched.schedule_type || 'annual'}']`);
+        if (radio) radio.checked = true;
+
+        if (schedTimePicker && sched.time_of_day) schedTimePicker.value = sched.time_of_day;
+        if (schedAnnualMonth && sched.annual_month) schedAnnualMonth.value = sched.annual_month;
+        if (schedAnnualDay && sched.annual_day) schedAnnualDay.value = sched.annual_day;
+        if (schedDatetimePicker && sched.scheduled_datetime) schedDatetimePicker.value = sched.scheduled_datetime;
+
+        // Recipient
+        if (sched.recipients && sched.recipients.length > 0) {
+            const r = sched.recipients[0];
+            if (r.jid && schedRecipientSelect) {
+                schedRecipientSelect.value = r.jid;
+            } else if (r.phone && schedCustomTarget) {
+                schedCustomTarget.value = r.phone;
+            }
+        }
+
+        handleScheduleTypeChange();
+        updateScheduleLivePreview();
+        switchSchedulesTab("tab-schedules-create");
+    };
 
     function escapeHTML(str) {
         if (!str) return "";

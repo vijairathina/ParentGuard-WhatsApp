@@ -186,68 +186,122 @@ def events():
             
     return Response(event_stream(), mimetype="text/event-stream")
 
-@app.route('/api/accounts/<account_id>/import_history', methods=['POST'])
-def import_history(account_id):
-    """
-    Imports history from the old eCourt whatsapp_history.json flat-list format.
-    POST body: {"history_path": "path/to/whatsapp_history.json"}
-    """
-    data = request.json or {}
-    history_path = data.get("history_path", "")
-    if not history_path:
-        return jsonify({"success": False, "error": "Missing history_path"}), 400
+# ========================================================
+# ADVANCED SCHEDULED MESSAGES API (Birthdays, Greetings, Festivals)
+# ========================================================
+import scheduler_service
 
-    count = manager.import_ecourt_history(account_id, history_path)
-    # After import, also refresh contacts from history
-    manager.merge_contacts_groups(account_id)
-    manager.broadcast("contacts_updated", account_id, {})
-    return jsonify({"success": True, "imported": count})
+@app.route('/api/schedules', methods=['GET', 'POST'])
+def handle_schedules():
+    """
+    GET: Returns all scheduled message rules.
+    POST: Creates a new scheduled message rule.
+    """
+    if request.method == 'POST':
+        data = request.json or {}
+        sched_id = f"sched_{uuid.uuid4().hex[:8]}"
+        new_sched = {
+            "id": sched_id,
+            "title": data.get("title", "Untitled Schedule"),
+            "category": data.get("category", "custom"),
+            "schedule_type": data.get("schedule_type", "once"),
+            "time_of_day": data.get("time_of_day", "09:00"),
+            "scheduled_datetime": data.get("scheduled_datetime"),
+            "annual_month": int(data.get("annual_month", 1)) if data.get("annual_month") else 1,
+            "annual_day": int(data.get("annual_day", 1)) if data.get("annual_day") else 1,
+            "days_of_week": data.get("days_of_week", [0]),
+            "account_id": data.get("account_id", "any"),
+            "recipients": data.get("recipients", []),
+            "message_template": data.get("message_template", ""),
+            "enabled": bool(data.get("enabled", True)),
+            "created_at": int(time.time()),
+            "last_status": "Scheduled"
+        }
+        new_sched["next_run"] = scheduler_service.compute_next_run(new_sched)
+        schedules = scheduler_service.load_schedules()
+        schedules.append(new_sched)
+        scheduler_service.save_schedules(schedules)
+        return jsonify({"success": True, "schedule": new_sched})
+    else:
+        schedules = scheduler_service.load_schedules()
+        return jsonify(schedules)
+
+@app.route('/api/schedules/<sched_id>', methods=['PUT', 'DELETE'])
+def manage_schedule_item(sched_id):
+    """
+    PUT: Updates an existing schedule (enable/disable, change time or content).
+    DELETE: Removes a schedule.
+    """
+    schedules = scheduler_service.load_schedules()
+    sched = next((s for s in schedules if s.get("id") == sched_id), None)
+    if not sched:
+        return jsonify({"success": False, "error": "Schedule not found"}), 404
+
+    if request.method == 'DELETE':
+        schedules = [s for s in schedules if s.get("id") != sched_id]
+        scheduler_service.save_schedules(schedules)
+        return jsonify({"success": True})
+
+    elif request.method == 'PUT':
+        data = request.json or {}
+        for key in ["title", "category", "schedule_type", "time_of_day", "scheduled_datetime", 
+                    "annual_month", "annual_day", "days_of_week", "account_id", "recipients", 
+                    "message_template", "enabled"]:
+            if key in data:
+                sched[key] = data[key]
+        sched["next_run"] = scheduler_service.compute_next_run(sched)
+        scheduler_service.save_schedules(schedules)
+        return jsonify({"success": True, "schedule": sched})
+
+@app.route('/api/schedules/<sched_id>/test', methods=['POST'])
+def test_send_schedule(sched_id):
+    """
+    Immediately sends a test execution of the scheduled message to its recipients.
+    """
+    schedules = scheduler_service.load_schedules()
+    sched = next((s for s in schedules if s.get("id") == sched_id), None)
+    if not sched:
+        return jsonify({"success": False, "error": "Schedule not found"}), 404
+
+    account_id = sched.get("account_id")
+    if not account_id or account_id == "any":
+        for acc_id, status in manager.statuses.items():
+            if status == "Connected":
+                account_id = acc_id
+                break
+
+    if not account_id or manager.statuses.get(account_id) != "Connected":
+        return jsonify({"success": False, "error": "No connected WhatsApp account available to send test."}), 400
+
+    recipients = sched.get("recipients", [])
+    if not recipients:
+        return jsonify({"success": False, "error": "No recipients configured for this schedule."}), 400
+
+    template_text = sched.get("message_template", "")
+    sent_count = 0
+    for rec in recipients:
+        target_jid = rec.get("jid") or rec.get("phone") or ""
+        target_name = rec.get("name") or ""
+        if target_jid:
+            body = scheduler_service.format_template_message(template_text, target_name)
+            if manager.send_whatsapp_message(account_id, target_jid, body):
+                sent_count += 1
+
+    return jsonify({"success": True, "sent_count": sent_count})
+
+@app.route('/api/schedules/templates', methods=['GET'])
+def get_sample_templates():
+    """
+    Returns curated sample message templates grouped by category:
+    birthdays, anniversaries, morning, afternoon, night, festivals, wellness.
+    """
+    return jsonify(scheduler_service.SAMPLE_TEMPLATES)
 
 if __name__ == '__main__':
+    import time
     # Start configured accounts in background
     print("[ParentGuard] Starting connected WhatsApp sessions...")
     manager.start_all()
-
-    # Optional auto-import eCourt history when running locally.
-    # Set ECOURT_HISTORY=/path/to/whatsapp_history.json on Linux, or place
-    # whatsapp_history.json in the repo root.
-    ECOURT_HISTORY = os.environ.get("ECOURT_HISTORY")
-    if not ECOURT_HISTORY:
-        for candidate in [
-            os.path.join(os.path.dirname(__file__), "whatsapp_history.json"),
-            r"D:\PY\eCourt\Backup\whatsapp_history.json",
-            r"D:\PY\eCourt\eCourtsServices 3.0\ecourt_flask\whatsapp_history.json"
-        ]:
-            if os.path.exists(candidate):
-                ECOURT_HISTORY = candidate
-                break
-
-    if ECOURT_HISTORY and os.path.exists(ECOURT_HISTORY):
-        import threading as _threading
-        def _auto_import():
-            import time as _time
-            _time.sleep(5)  # wait for accounts to connect first
-            for acc_id in list(manager.profile_info.keys()):
-                HISTORY_FILE = f"accounts/history_{acc_id}.json"
-                # Only import if not already done (check for ecourt_ prefixed ids)
-                already_imported = False
-                if os.path.exists(HISTORY_FILE):
-                    try:
-                        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                            h = json.load(f)
-                        # Check if any ecourt_ ids exist
-                        for msgs in h.values():
-                            if any(m.get('id','').startswith('ecourt_') for m in msgs):
-                                already_imported = True
-                                break
-                    except:
-                        pass
-                if not already_imported:
-                    print(f"[App] Auto-importing eCourt history for {acc_id}...")
-                    manager.import_ecourt_history(acc_id, ECOURT_HISTORY)
-                    manager.merge_contacts_groups(acc_id)
-                    manager.broadcast("contacts_updated", acc_id, {})
-        _threading.Thread(target=_auto_import, daemon=True).start()
 
     # Start web app on port
     port = int(os.environ.get("FLASK_PORT", os.environ.get("PORT", 5003)))

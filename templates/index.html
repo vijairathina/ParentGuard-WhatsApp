@@ -26,6 +26,15 @@
                     </div>
                 </div>
                 <div class="header-actions">
+                    <!-- Scheduled Messages Button -->
+                    <button id="btn-open-schedules" title="Scheduled & Automated Messages (Birthdays, Greetings, Festivals)" class="icon-button position-relative">
+                        <!-- Calendar / Clock Schedule Icon -->
+                        <svg viewBox="0 0 24 24" width="20" height="20" class="svg-icon">
+                            <path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zm-7 5h5v5h-5v-5z"/>
+                        </svg>
+                        <span id="schedules-counter-badge" class="alert-counter-badge" style="display: none; background: var(--wa-green); box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);">0</span>
+                    </button>
+
                     <!-- Safety / Incident Logs button -->
                     <button id="btn-open-logs" title="Safety & Content Incident Logs" class="icon-button position-relative">
                         <!-- Shield Alert Icon -->
@@ -210,6 +219,12 @@
                 <footer class="input-panel">
                     <form id="message-form" class="message-form">
                         <input type="text" id="message-input" placeholder="Type a message" autocomplete="off">
+                        <button type="button" id="btn-chat-schedule" class="icon-button schedule-chat-btn" title="Schedule Automated Message (Birthday, Greeting, Festival)">
+                            <!-- Clock / Schedule Icon -->
+                            <svg viewBox="0 0 24 24" width="20" height="20" class="svg-icon">
+                                <path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                            </svg>
+                        </button>
                         <button type="submit" id="btn-send" class="icon-button send-button" title="Send Message">
                             <svg viewBox="0 0 24 24" width="22" height="22" class="svg-icon">
                                 <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
@@ -518,6 +533,222 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="btn-cancel-settings">Close</button>
                 <button type="button" class="btn btn-primary" id="btn-save-settings">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced Scheduled & Automated Messages Modal -->
+    <div class="modal-overlay" id="schedules-modal" style="display: none;">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <h2>⏰ Scheduled & Automated Messages</h2>
+                    <span class="modal-subtitle">Birthdays, Wedding Anniversaries, Greetings, Festivals & Reminders</span>
+                </div>
+                <button class="modal-close" id="btn-close-schedules">&times;</button>
+            </div>
+
+            <!-- Modal Tabs -->
+            <div class="modal-tabs">
+                <button class="tab-btn active" data-tab="tab-schedules-list">Active Schedules</button>
+                <button class="tab-btn" data-tab="tab-schedules-create" id="btn-tab-create-schedule">+ Create Schedule</button>
+                <button class="tab-btn" data-tab="tab-schedules-templates">Sample Templates Library</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- TAB 1: SCHEDULES LIST -->
+                <div class="tab-pane active" id="tab-schedules-list">
+                    <div class="schedules-top-bar">
+                        <div class="schedules-filter-pills">
+                            <button class="sched-pill active" data-cat="all">All</button>
+                            <button class="sched-pill" data-cat="birthday">🎂 Birthday</button>
+                            <button class="sched-pill" data-cat="anniversary">💍 Anniversary</button>
+                            <button class="sched-pill" data-cat="morning">🌅 Morning</button>
+                            <button class="sched-pill" data-cat="afternoon">☀️ Afternoon</button>
+                            <button class="sched-pill" data-cat="night">🌙 Night</button>
+                            <button class="sched-pill" data-cat="festival">🪔 Festival</button>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" id="btn-top-create-sched">+ Add New Schedule</button>
+                    </div>
+
+                    <div id="schedules-cards-container" class="schedules-cards-container">
+                        <!-- Rendered dynamically -->
+                    </div>
+                </div>
+
+                <!-- TAB 2: CREATE / EDIT SCHEDULE -->
+                <div class="tab-pane" id="tab-schedules-create">
+                    <form id="form-schedule" class="schedule-form">
+                        <input type="hidden" id="sched-edit-id" value="">
+
+                        <!-- Quick Template Picker Row -->
+                        <div class="form-group mb-3">
+                            <label class="form-label font-weight-bold">⚡ Quick Template Loader (Optional)</label>
+                            <p class="secondary-text">Click any occasion to load sample message, recommended time & recurrence:</p>
+                            <div class="template-quick-chips" id="template-quick-chips">
+                                <button type="button" class="chip-btn" data-tpl="birthday">🎂 Birthday Wish</button>
+                                <button type="button" class="chip-btn" data-tpl="anniversary">💍 Anniversary</button>
+                                <button type="button" class="chip-btn" data-tpl="morning">🌅 Good Morning</button>
+                                <button type="button" class="chip-btn" data-tpl="afternoon">☀️ Afternoon</button>
+                                <button type="button" class="chip-btn" data-tpl="night">🌙 Good Night</button>
+                                <button type="button" class="chip-btn" data-tpl="festival">🪔 Festival (Diwali/New Year)</button>
+                                <button type="button" class="chip-btn" data-tpl="reminder">💧 Health Reminder</button>
+                            </div>
+                        </div>
+
+                        <div class="form-row-2col">
+                            <!-- Title -->
+                            <div class="form-group">
+                                <label for="sched-title" class="form-label font-weight-bold">Schedule Title / Label</label>
+                                <input type="text" id="sched-title" class="form-input" placeholder="e.g. Birthday Wish to Mom" required>
+                            </div>
+
+                            <!-- Category -->
+                            <div class="form-group">
+                                <label for="sched-category" class="form-label font-weight-bold">Category</label>
+                                <select id="sched-category" class="form-input">
+                                    <option value="birthday">🎂 Birthday Wishes</option>
+                                    <option value="anniversary">💍 Wedding Anniversary</option>
+                                    <option value="morning">🌅 Good Morning Greeting</option>
+                                    <option value="afternoon">☀️ Good Afternoon Greeting</option>
+                                    <option value="night">🌙 Good Night Greeting</option>
+                                    <option value="festival">🪔 Festivals & Holidays</option>
+                                    <option value="reminder">💧 Routine / Wellness Reminder</option>
+                                    <option value="custom">✨ Custom Schedule</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Recipient Target -->
+                        <div class="form-group mb-3">
+                            <label class="form-label font-weight-bold">Recipient(s)</label>
+                            <div class="recipient-selection-bar">
+                                <select id="sched-recipient-select" class="form-input">
+                                    <option value="">-- Choose from WhatsApp Contacts / Groups --</option>
+                                </select>
+                                <span class="or-separator">OR</span>
+                                <input type="text" id="sched-custom-target" class="form-input" placeholder="Type Phone number (e.g. 919876543210)">
+                            </div>
+                            <small class="secondary-text mt-1 d-block">Select a contact from your WhatsApp chats or type a custom phone number.</small>
+                        </div>
+
+                        <!-- Schedule Recurrence & Timing -->
+                        <div class="schedule-timing-card">
+                            <div class="form-group">
+                                <label class="form-label font-weight-bold">Frequency / Recurrence</label>
+                                <div class="radio-pill-group">
+                                    <label class="radio-pill">
+                                        <input type="radio" name="sched-type" value="annual" checked>
+                                        <span>📅 Annual (Yearly on Date)</span>
+                                    </label>
+                                    <label class="radio-pill">
+                                        <input type="radio" name="sched-type" value="daily">
+                                        <span>🔁 Daily (Every Day)</span>
+                                    </label>
+                                    <label class="radio-pill">
+                                        <input type="radio" name="sched-type" value="weekly">
+                                        <span>🗓️ Weekly (Specific Days)</span>
+                                    </label>
+                                    <label class="radio-pill">
+                                        <input type="radio" name="sched-type" value="once">
+                                        <span>⏰ One-Time (Specific Date & Time)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Timing Inputs Container -->
+                            <div class="timing-inputs-row mt-2" id="timing-inputs-row">
+                                <!-- Annual Month/Day (Visible for Annual) -->
+                                <div class="form-group" id="group-annual-date">
+                                    <label class="form-label">Month & Day (e.g. Birthday Date)</label>
+                                    <div class="d-flex gap-2">
+                                        <select id="sched-annual-month" class="form-input">
+                                            <option value="1">January (1)</option>
+                                            <option value="2">February (2)</option>
+                                            <option value="3">March (3)</option>
+                                            <option value="4">April (4)</option>
+                                            <option value="5">May (5)</option>
+                                            <option value="6">June (6)</option>
+                                            <option value="7">July (7)</option>
+                                            <option value="8">August (8)</option>
+                                            <option value="9">September (9)</option>
+                                            <option value="10">October (10)</option>
+                                            <option value="11">November (11)</option>
+                                            <option value="12">December (12)</option>
+                                        </select>
+                                        <input type="number" id="sched-annual-day" class="form-input" min="1" max="31" value="1" placeholder="Day (1-31)" style="max-width: 100px;">
+                                    </div>
+                                </div>
+
+                                <!-- One-time Datetime (Visible for Once) -->
+                                <div class="form-group" id="group-once-datetime" style="display: none;">
+                                    <label for="sched-datetime-picker" class="form-label">Date & Time</label>
+                                    <input type="datetime-local" id="sched-datetime-picker" class="form-input">
+                                </div>
+
+                                <!-- Time of Day (Visible for Daily, Annual, Weekly) -->
+                                <div class="form-group" id="group-time-of-day">
+                                    <label for="sched-time-picker" class="form-label">Time to Send</label>
+                                    <input type="time" id="sched-time-picker" class="form-input" value="09:00">
+                                </div>
+                            </div>
+
+                            <!-- Weekly Day Checkboxes -->
+                            <div class="form-group mt-2" id="group-weekly-days" style="display: none;">
+                                <label class="form-label">Days of Week</label>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <label class="day-checkbox"><input type="checkbox" name="sched-day" value="0"> Mon</label>
+                                    <label class="day-checkbox"><input type="checkbox" name="sched-day" value="1"> Tue</label>
+                                    <label class="day-checkbox"><input type="checkbox" name="sched-day" value="2"> Wed</label>
+                                    <label class="day-checkbox"><input type="checkbox" name="sched-day" value="3"> Thu</label>
+                                    <label class="day-checkbox"><input type="checkbox" name="sched-day" value="4"> Fri</label>
+                                    <label class="day-checkbox"><input type="checkbox" name="sched-day" value="5"> Sat</label>
+                                    <label class="day-checkbox"><input type="checkbox" name="sched-day" value="6"> Sun</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Body Editor -->
+                        <div class="form-group mt-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label for="sched-message-text" class="form-label font-weight-bold">Message Content</label>
+                                <div class="variable-pills">
+                                    <span class="var-badge" title="Inserts recipient's name" id="btn-insert-name">{name}</span>
+                                    <span class="var-badge" title="Inserts current date" id="btn-insert-date">{date}</span>
+                                    <span class="var-badge" title="Inserts current time" id="btn-insert-time">{time}</span>
+                                    <span class="var-badge" title="Inserts current weekday" id="btn-insert-day">{day}</span>
+                                </div>
+                            </div>
+                            <textarea id="sched-message-text" class="form-input" rows="4" placeholder="Type your message with emojis. Click variable tags above to insert dynamic names/dates." required></textarea>
+                        </div>
+
+                        <!-- Live Message Preview Box -->
+                        <div class="sched-preview-box mt-2">
+                            <span class="preview-box-label">Live Preview (what recipient sees):</span>
+                            <div id="sched-live-preview" class="preview-bubble">Type message above...</div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                            <label class="switch-control">
+                                <input type="checkbox" id="sched-enabled" checked>
+                                <span class="slider"></span>
+                                <span class="switch-label">Enable schedule immediately</span>
+                            </label>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-secondary" id="btn-cancel-create-sched">Cancel</button>
+                                <button type="submit" class="btn btn-primary" id="btn-save-schedule">💾 Save Schedule</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- TAB 3: SAMPLE TEMPLATES LIBRARY -->
+                <div class="tab-pane" id="tab-schedules-templates">
+                    <p class="secondary-text mb-3">Browse curated templates for all occasions. Click <strong>"Use Template"</strong> to load it directly into your schedule:</p>
+                    <div id="templates-library-grid" class="templates-library-grid">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>

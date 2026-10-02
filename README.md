@@ -52,6 +52,11 @@ Whenever inappropriate, dangerous, or illegal content (substances, cyberbullying
   - **Emerald Night** (deep forest green)
   - **Midnight OLED** (pitch black for AMOLED screens)
   - **ParentGuard Shield** (navy blue and gold security palette)
+- **⏰ Advanced Scheduled & Automated Messages**:
+  - Rule-based message scheduler with persistent storage (retained across logouts & server restarts).
+  - Built-in rich templates for **Birthday Wishes**, **Wedding Anniversaries**, **Daily Routine Greetings (Morning, Afternoon, Night)**, **Festivals (Diwali, New Year, Pongal, Christmas, Eid, Holi)**, and **Health Check-ins**.
+  - Dynamic template variables: `{name}`, `{date}`, `{time}`, `{day}`.
+  - Automatic queueing when WhatsApp sessions are temporarily offline with auto-dispatch on reconnect.
 - **⚡ SSE Realtime Updates**:
   - Live server-sent events for instant message delivery, status changes, and safety incident alerts without manual polling.
 

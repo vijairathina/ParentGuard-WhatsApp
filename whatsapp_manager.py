@@ -45,68 +45,11 @@ class WhatsAppManager:
         # Ensure directory exists
         os.makedirs("accounts", exist_ok=True)
         self.load_accounts()
-        self.start_external_history_watcher()
-
-    def start_external_history_watcher(self):
-        """
-        Continuously watches external whatsapp_history.json (produced by whatsapp_service.py)
-        and merges any newly arrived messages into active WhatsApp accounts in real-time.
-        """
-        def _watcher():
-            mtimes = {}
-            candidate_paths = [
-                os.path.join(os.path.dirname(__file__), "whatsapp_history.json"),
-                r"D:\PY\eCourt\Backup\whatsapp_history.json",
-                r"D:\PY\eCourt\eCourtsServices 3.0\ecourt_flask\whatsapp_history.json",
-                r"D:\PY\eCourt\eCourtsServices 3.0\ecourt_flask - Copy\whatsapp_history.json",
-                r"D:\PY\eCourt\ecourt_flask 1.0\whatsapp_history.json"
-            ]
-            env_path = os.environ.get("ECOURT_HISTORY")
-            if env_path and env_path not in candidate_paths:
-                candidate_paths.insert(0, env_path)
-
-            # Initialize initial modification times
-            for p in candidate_paths:
-                if p and os.path.exists(p):
-                    try:
-                        mtimes[p] = os.path.getmtime(p)
-                    except Exception:
-                        pass
-
-            while True:
-                time.sleep(1.5)
-                for p in candidate_paths:
-                    if not p or not os.path.exists(p):
-                        continue
-                    try:
-                        mtime = os.path.getmtime(p)
-                        last_m = mtimes.get(p)
-                        if last_m is None:
-                            mtimes[p] = mtime
-                            continue
-                        if mtime > last_m:
-                            mtimes[p] = mtime
-                            print(f"[Watcher] Detected live update in {p} from whatsapp_service!")
-                            for acc_id in list(self.profile_info.keys()):
-                                count = self.import_ecourt_history(acc_id, p)
-                                if count > 0:
-                                    self.merge_contacts_groups(acc_id)
-                                    self.broadcast("contacts_updated", acc_id, {})
-                                    top_contacts = self.get_contacts(acc_id)
-                                    if top_contacts:
-                                        top_c = top_contacts[0]
-                                        msgs = self.get_messages(acc_id, top_c["jid"])
-                                        if msgs:
-                                            self.broadcast("message", acc_id, {
-                                                "chat_jid": top_c["jid"],
-                                                "message": msgs[-1]
-                                            })
-                    except Exception:
-                        pass
-        threading.Thread(target=_watcher, daemon=True, name="external_history_watcher").start()
-
-    def get_listeners(self):
-        return self.listeners
+        
+        # Start persistent scheduled messages engine
+        from scheduler_service import SchedulerEngine
+        self.scheduler = SchedulerEngine(self)
+        self.scheduler.start()
 
     def register_listener(self) -> queue.Queue:
         q = queue.Queue()
@@ -1483,84 +1426,6 @@ class WhatsAppManager:
         # Sort chronologically
         messages.sort(key=lambda x: x.get("timestamp", 0))
         return messages
-
-    def import_ecourt_history(self, account_id: str, ecourt_history_path: str):
-        """
-        Imports the old eCourt whatsapp_history.json (flat list format) into
-        the per-account history file (dict keyed by chat_jid).
-        Skips duplicates by checking message ID.
-        """
-        if not os.path.exists(ecourt_history_path):
-            print(f"[Manager] eCourt history file not found: {ecourt_history_path}")
-            return 0
-        
-        try:
-            with open(ecourt_history_path, 'r', encoding='utf-8') as f:
-                old_history = json.load(f)
-        except Exception as e:
-            print(f"[Manager] Error reading eCourt history: {e}")
-            return 0
-
-        if not isinstance(old_history, list):
-            print("[Manager] eCourt history is not a list, skipping.")
-            return 0
-
-        HISTORY_FILE = f"accounts/history_{account_id}.json"
-        with _lock:
-            history = {}
-            if os.path.exists(HISTORY_FILE):
-                try:
-                    with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                        history = json.load(f)
-                except:
-                    pass
-
-            imported = 0
-            for msg in old_history:
-                # Determine chat JID (group or direct)
-                group_jid = msg.get('group_jid')
-                sender_jid = str(msg.get('sender_jid', ''))
-                chat_jid = group_jid if group_jid else sender_jid
-
-                if not chat_jid or chat_jid == 'None':
-                    continue
-
-                is_ai = msg.get('is_ai', False)
-                body = str(msg.get('body', ''))
-                sender_name = str(msg.get('sender_name', sender_jid.split('@')[0]))
-
-                # Normalize timestamp to seconds
-                raw_ts = int(msg.get('timestamp', 0))
-                ts_seconds = raw_ts // 1000 if raw_ts > 1_000_000_000_000 else raw_ts
-
-                msg_data = {
-                    "id": f"ecourt_{imported}_{ts_seconds}",
-                    "sender": sender_jid,
-                    "sender_name": "Me" if is_ai else sender_name,
-                    "chat_jid": chat_jid,
-                    "body": body,
-                    "timestamp": ts_seconds,
-                    "is_outgoing": is_ai
-                }
-
-                if chat_jid not in history:
-                    history[chat_jid] = []
-
-                history[chat_jid].append(msg_data)
-                imported += 1
-
-            # Trim each chat to 150 msgs
-            for cjid in history:
-                history[cjid] = history[cjid][-150:]
-
-            try:
-                with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(history, f, indent=2)
-                print(f"[Manager] Imported {imported} messages from eCourt history.")
-            except Exception as e:
-                print(f"[Manager] Error writing history: {e}")
-            
-            return imported
 
     def send_whatsapp_message(self, account_id: str, target: str, body: str) -> bool:
         client = self.clients.get(account_id)
