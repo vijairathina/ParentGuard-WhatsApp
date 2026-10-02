@@ -106,6 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnTabCreateSchedule = document.getElementById("btn-tab-create-schedule");
     const schedulesCardsContainer = document.getElementById("schedules-cards-container");
     const formSchedule = document.getElementById("form-schedule");
+    const btnSaveSchedule = document.getElementById("btn-save-schedule");
     const schedEditId = document.getElementById("sched-edit-id");
     const schedTitle = document.getElementById("sched-title");
     const schedCategory = document.getElementById("sched-category");
@@ -241,10 +242,7 @@ document.addEventListener("DOMContentLoaded", () => {
     init();
 
     async function init() {
-        setupSSE();
-        await loadAccounts();
-
-        // Event Listeners
+        // Event Listeners (Registered immediately & synchronously)
         dropdown.addEventListener("change", handleAccountSwitch);
         btnAddAccount.addEventListener("click", openAddAccountModal);
         btnEmptyAddAccount.addEventListener("click", openAddAccountModal);
@@ -370,6 +368,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (formSchedule) {
             formSchedule.addEventListener("submit", handleSaveSchedule);
         }
+        if (btnSaveSchedule) {
+            btnSaveSchedule.addEventListener("click", handleSaveSchedule);
+        }
 
         // Schedule Modal Tab Navigation
         document.querySelectorAll("#schedules-modal .sched-tab-btn").forEach(btn => {
@@ -429,6 +430,9 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
+        // Initial Background Data Synchronization
+        setupSSE();
+        loadAccounts();
         loadSchedules();
         loadSampleTemplates();
     }
@@ -844,7 +848,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function handleDeleteAccount() {
         if (!activeAccountId) {
-            alert("Please select a WhatsApp account first to delete.");
+            showSecurityToast("Please select a WhatsApp account first to delete.", "warning");
             return;
         }
 
@@ -852,10 +856,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const accName = acc?.name || activeAccountId;
         const accPhone = acc?.phone ? `(${acc.phone})` : "";
 
-        const confirmDelete = confirm(`Are you sure you want to permanently delete account "${accName}" ${accPhone}?\n\nThis will remove all session credentials and saved chat data for this account.`);
+        const confirmDelete = await showConfirmDialog(
+            "Delete WhatsApp Account",
+            `Are you sure you want to permanently delete account "${accName}" ${accPhone}?\n\nThis will remove all session credentials and saved chat data for this account.`,
+            "Delete Permanently",
+            true
+        );
         if (!confirmDelete) return;
 
         try {
+            showSecurityToast("Deleting account...", "info");
             const res = await fetch("/api/accounts/delete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -863,7 +873,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             const data = await res.json();
             if (data.success) {
-                showNotificationToast("Account Deleted", `Account "${accName}" was removed.`, "var(--danger)");
+                showSecurityToast(`Account "${accName}" was permanently removed.`, "danger");
                 closeSettingsModal();
                 activeAccountId = "";
                 activeContactJid = "";
@@ -871,11 +881,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 hideQrPane();
                 await loadAccounts();
             } else {
-                alert("Failed to delete account: " + (data.error || "Unknown error"));
+                showSecurityToast("Failed to delete account: " + (data.error || "Unknown error"), "danger");
             }
         } catch (err) {
             console.error("Error deleting account:", err);
-            alert("Error deleting account: " + err.message);
+            showSecurityToast("Error deleting account: " + err.message, "danger");
         }
     }
 
@@ -1113,7 +1123,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 7000);
     }
 
-    function showNotificationToast(title, body, color) {
+    function showNotificationToast(title, body = "", color = "var(--wa-green)") {
         const toast = document.createElement("div");
         toast.className = "security-toast";
         toast.style.borderColor = color || "var(--wa-green)";
@@ -1121,13 +1131,68 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="security-toast-header">
                 <span class="security-toast-title" style="color: ${color || 'var(--wa-green)'}">${escapeHTML(title)}</span>
             </div>
-            <div class="security-toast-body">${escapeHTML(body)}</div>
+            ${body ? `<div class="security-toast-body">${escapeHTML(body)}</div>` : ''}
         `;
         toastContainer.appendChild(toast);
         setTimeout(() => {
             if (toast.parentNode) toast.remove();
         }, 3500);
     }
+
+    function showSecurityToast(title, typeOrColor = "info") {
+        let color = "var(--wa-green)";
+        if (typeOrColor === "danger" || typeOrColor === "error") color = "var(--danger)";
+        else if (typeOrColor === "warning") color = "var(--warning)";
+        else if (typeOrColor === "info") color = "var(--info)";
+        else if (typeOrColor && (typeOrColor.startsWith("#") || typeOrColor.startsWith("var("))) color = typeOrColor;
+        showNotificationToast(title, "", color);
+    }
+    window.showSecurityToast = showSecurityToast;
+    window.showNotificationToast = showNotificationToast;
+
+    function showConfirmDialog(title, message, confirmBtnText = "Confirm", isDanger = false) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById("confirm-dialog-modal");
+            const titleEl = document.getElementById("confirm-dialog-title");
+            const msgEl = document.getElementById("confirm-dialog-message");
+            const btnOk = document.getElementById("btn-confirm-dialog-ok");
+            const btnCancel = document.getElementById("btn-confirm-dialog-cancel");
+            const btnClose = document.getElementById("btn-confirm-dialog-close");
+
+            if (!modal) {
+                resolve(confirm(message));
+                return;
+            }
+
+            titleEl.textContent = title;
+            msgEl.textContent = message;
+            btnOk.textContent = confirmBtnText;
+            btnOk.className = isDanger ? "btn btn-danger" : "btn btn-primary";
+            modal.style.display = "flex";
+
+            function cleanup(result) {
+                modal.style.display = "none";
+                btnOk.removeEventListener("click", onOk);
+                btnCancel.removeEventListener("click", onCancel);
+                if (btnClose) btnClose.removeEventListener("click", onCancel);
+                modal.removeEventListener("click", onBackdrop);
+                document.removeEventListener("keydown", onKeyDown);
+                resolve(result);
+            }
+
+            function onOk() { cleanup(true); }
+            function onCancel() { cleanup(false); }
+            function onBackdrop(e) { if (e.target === modal) cleanup(false); }
+            function onKeyDown(e) { if (e.key === "Escape") cleanup(false); }
+
+            btnOk.addEventListener("click", onOk);
+            btnCancel.addEventListener("click", onCancel);
+            if (btnClose) btnClose.addEventListener("click", onCancel);
+            modal.addEventListener("click", onBackdrop);
+            document.addEventListener("keydown", onKeyDown);
+        });
+    }
+    window.showConfirmDialog = showConfirmDialog;
 
     // --- Gemini Test Handler ---
     async function handleTestGemini() {
@@ -2322,17 +2387,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function handleSaveSchedule(e) {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
 
         const editId = schedEditId ? schedEditId.value.trim() : "";
-        const title = schedTitle.value.trim() || "Untitled Schedule";
-        const category = schedCategory.value || "custom";
+        const title = schedTitle ? schedTitle.value.trim() : "";
+        if (!title) {
+            showSecurityToast("Please enter a schedule title.", "warning");
+            if (schedTitle) schedTitle.focus();
+            return;
+        }
+
+        const messageTemplate = schedMessageText ? schedMessageText.value.trim() : "";
+        if (!messageTemplate) {
+            showSecurityToast("Please enter message content.", "warning");
+            if (schedMessageText) schedMessageText.focus();
+            return;
+        }
+
+        const category = schedCategory?.value || "custom";
         const schedType = document.querySelector("input[name='sched-type']:checked")?.value || "annual";
         const timeOfDay = schedTimePicker ? schedTimePicker.value : "09:00";
         const annualMonth = schedAnnualMonth ? parseInt(schedAnnualMonth.value) : 1;
         const annualDay = schedAnnualDay ? parseInt(schedAnnualDay.value) : 1;
         const schedDatetime = schedDatetimePicker ? schedDatetimePicker.value : "";
-        const messageTemplate = schedMessageText.value.trim();
         const enabled = schedEnabled ? schedEnabled.checked : true;
 
         const daysOfWeek = [];
@@ -2355,16 +2432,6 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
-        if (recipients.length === 0) {
-            alert("Please select a WhatsApp contact or type a recipient phone number.");
-            return;
-        }
-
-        if (!messageTemplate) {
-            alert("Please enter a message content.");
-            return;
-        }
-
         const payload = {
             title,
             category,
@@ -2380,6 +2447,11 @@ document.addEventListener("DOMContentLoaded", () => {
             enabled
         };
 
+        if (btnSaveSchedule) {
+            btnSaveSchedule.disabled = true;
+            btnSaveSchedule.textContent = "💾 Saving...";
+        }
+
         try {
             const url = editId ? `/api/schedules/${editId}` : "/api/schedules";
             const method = editId ? "PUT" : "POST";
@@ -2391,14 +2463,21 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             if (data.success) {
                 showSecurityToast(editId ? "Schedule updated successfully!" : "Schedule created successfully!", "info");
+                if (schedEditId) schedEditId.value = "";
+                if (formSchedule) formSchedule.reset();
                 switchSchedulesTab("tab-schedules-list");
-                loadSchedules();
+                await loadSchedules();
             } else {
-                alert("Error saving schedule: " + (data.error || "Unknown error"));
+                showSecurityToast("Error saving schedule: " + (data.error || "Unknown error"), "danger");
             }
         } catch (err) {
             console.error("Error saving schedule:", err);
-            alert("Failed to save schedule: " + err.message);
+            showSecurityToast("Failed to save schedule: " + err.message, "danger");
+        } finally {
+            if (btnSaveSchedule) {
+                btnSaveSchedule.disabled = false;
+                btnSaveSchedule.textContent = "💾 Save Schedule";
+            }
         }
     }
 
@@ -2411,7 +2490,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             const data = await res.json();
             if (data.success) {
-                loadSchedules();
+                await loadSchedules();
             }
         } catch (err) {
             console.error("Error toggling schedule:", err);
@@ -2419,16 +2498,27 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     window.handleDeleteSchedule = async function(schedId) {
-        if (!confirm("Are you sure you want to delete this scheduled message?")) return;
+        const ok = await showConfirmDialog(
+            "Delete Scheduled Message",
+            "Are you sure you want to permanently delete this scheduled message?",
+            "Delete Schedule",
+            true
+        );
+        if (!ok) return;
+
         try {
+            showSecurityToast("Deleting schedule...", "info");
             const res = await fetch(`/api/schedules/${schedId}`, { method: "DELETE" });
             const data = await res.json();
             if (data.success) {
-                showSecurityToast("Schedule deleted.", "info");
-                loadSchedules();
+                showSecurityToast("Schedule deleted successfully.", "info");
+                await loadSchedules();
+            } else {
+                showSecurityToast("Failed to delete schedule: " + (data.error || "Unknown error"), "danger");
             }
         } catch (err) {
             console.error("Error deleting schedule:", err);
+            showSecurityToast("Error deleting schedule: " + err.message, "danger");
         }
     };
 
@@ -2439,7 +2529,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             if (data.success) {
                 showSecurityToast(`Test message sent successfully (${data.sent_count} delivered)!`, "info");
-                loadSchedules();
+                await loadSchedules();
             } else {
                 alert("Error sending test: " + (data.error || "Failed"));
             }

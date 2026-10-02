@@ -604,7 +604,7 @@
                             <!-- Title -->
                             <div class="form-group">
                                 <label for="sched-title" class="form-label font-weight-bold">Schedule Title / Label</label>
-                                <input type="text" id="sched-title" class="form-input" placeholder="e.g. Birthday Wish to Mom" required>
+                                <input type="text" id="sched-title" class="form-input" placeholder="e.g. Birthday Wish to Mom">
                             </div>
 
                             <!-- Category -->
@@ -723,7 +723,7 @@
                                     <span class="var-badge" title="Inserts current weekday" id="btn-insert-day">{day}</span>
                                 </div>
                             </div>
-                            <textarea id="sched-message-text" class="form-input" rows="4" placeholder="Type your message with emojis. Click variable tags above to insert dynamic names/dates." required></textarea>
+                            <textarea id="sched-message-text" class="form-input" rows="4" placeholder="Type your message with emojis. Click variable tags above to insert dynamic names/dates."></textarea>
                         </div>
 
                         <!-- Live Message Preview Box -->
@@ -740,7 +740,7 @@
                             </label>
                             <div class="d-flex gap-2">
                                 <button type="button" class="btn btn-secondary" id="btn-cancel-create-sched">Cancel</button>
-                                <button type="submit" class="btn btn-primary" id="btn-save-schedule">💾 Save Schedule</button>
+                                <button type="button" class="btn btn-primary" id="btn-save-schedule">💾 Save Schedule</button>
                             </div>
                         </div>
                     </form>
@@ -770,6 +770,23 @@
             <div id="lightbox-caption" class="lightbox-caption"></div>
         </div>
     </div>
+
+    <!-- In-App Confirmation Modal (Never blocked by browser alert settings) -->
+    <div class="modal-overlay" id="confirm-dialog-modal" style="display: none; z-index: 9999;">
+        <div class="modal" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3 id="confirm-dialog-title" style="margin: 0; font-size: 16px; font-weight: 600;">Confirm Action</h3>
+                <button class="modal-close" id="btn-confirm-dialog-close">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <p id="confirm-dialog-message" style="font-size: 14px; line-height: 1.5; color: var(--text-primary); margin: 0;"></p>
+            </div>
+            <div class="modal-footer" style="padding: 14px 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" id="btn-confirm-dialog-cancel">Cancel</button>
+                <button type="button" class="btn btn-danger" id="btn-confirm-dialog-ok">Confirm</button>
+            </div>
+        </div>
+    </div>
 </body>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=2.2"></script>
 </html>
