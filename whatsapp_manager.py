@@ -250,6 +250,15 @@ class WhatsAppManager:
         self.broadcast("status", account_id, {"status": "Disconnected"})
         return True
 
+    def stop_all(self):
+        """Cleanly disconnects and terminates all active WhatsApp client sessions."""
+        print(f"[Manager] Stopping all {len(self.clients)} active account sessions...")
+        for acc_id in list(self.clients.keys()):
+            try:
+                self.stop_account(acc_id)
+            except Exception as e:
+                print(f"[Manager] Error stopping account {acc_id}: {e}")
+
     def delete_account(self, account_id: str) -> bool:
         self.stop_account(account_id)
         

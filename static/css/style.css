@@ -2134,6 +2134,69 @@ input:checked + .slider:before {
     color: var(--wa-green);
 }
 
+/* Switch Control for Schedules */
+.switch-control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.switch-control input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.switch-control .slider {
+    position: relative;
+    display: inline-block;
+    width: 38px;
+    height: 22px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    transition: 0.3s;
+    flex-shrink: 0;
+}
+
+.switch-control .slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.3s;
+}
+
+.switch-control input:checked + .slider {
+    background-color: var(--wa-green);
+    border-color: var(--wa-green);
+}
+
+.switch-control input:checked + .slider:before {
+    transform: translateX(16px);
+}
+
+.switch-control .switch-label {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.sched-modal-body .sched-tab-pane {
+    display: none;
+}
+
+.sched-modal-body .sched-tab-pane.active {
+    display: block;
+    animation: fadeIn 0.2s ease-out;
+}
+
 .schedules-cards-container {
     display: flex;
     flex-direction: column;

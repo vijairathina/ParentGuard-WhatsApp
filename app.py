@@ -298,12 +298,34 @@ def get_sample_templates():
     return jsonify(scheduler_service.SAMPLE_TEMPLATES)
 
 if __name__ == '__main__':
+    import signal
+    import sys
     import time
+
+    def force_exit(sig=None, frame=None):
+        print("\n[ParentGuard] Shutdown signal received (Ctrl+C). Terminating all WhatsApp workers...")
+        try:
+            manager.stop_all()
+        except Exception as e:
+            print(f"[ParentGuard] Error during cleanup: {e}")
+        print("[ParentGuard] App successfully stopped. Bye!")
+        os._exit(0)
+
+    # Register handlers for Ctrl+C and termination signals on Windows
+    signal.signal(signal.SIGINT, force_exit)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, force_exit)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, force_exit)
+
     # Start configured accounts in background
     print("[ParentGuard] Starting connected WhatsApp sessions...")
     manager.start_all()
 
     # Start web app on port
     port = int(os.environ.get("FLASK_PORT", os.environ.get("PORT", 5003)))
-    print(f"[ParentGuard] Launching ParentGuard WhatsApp Web App on port {port}...")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    print(f"[ParentGuard] Launching ParentGuard WhatsApp Web App on port {port}... (Press Ctrl+C to stop)")
+    try:
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    except (KeyboardInterrupt, SystemExit):
+        force_exit()

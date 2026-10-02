@@ -61,7 +61,7 @@
                     </button>
 
                     <!-- Delete Account Button -->
-                    <button id="btn-delete-account" title="Delete Account" class="icon-button danger-hover" disabled>
+                    <button id="btn-delete-account" title="Delete Account" class="icon-button danger-hover">
                         <!-- Trash icon SVG -->
                         <svg viewBox="0 0 24 24" width="20" height="20" class="svg-icon">
                             <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>
@@ -310,6 +310,10 @@
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
                                 Disconnect / Log Out
                             </button>
+                            <button id="btn-settings-delete-account" class="btn btn-danger" title="Permanently delete account session credentials">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                                Delete Account
+                            </button>
                         </div>
                     </div>
 
@@ -549,15 +553,15 @@
             </div>
 
             <!-- Modal Tabs -->
-            <div class="modal-tabs">
-                <button class="tab-btn active" data-tab="tab-schedules-list">Active Schedules</button>
-                <button class="tab-btn" data-tab="tab-schedules-create" id="btn-tab-create-schedule">+ Create Schedule</button>
-                <button class="tab-btn" data-tab="tab-schedules-templates">Sample Templates Library</button>
+            <div class="modal-tabs sched-modal-tabs">
+                <button class="tab-btn sched-tab-btn active" data-tab="tab-schedules-list">Active Schedules</button>
+                <button class="tab-btn sched-tab-btn" data-tab="tab-schedules-create" id="btn-tab-create-schedule">+ Create Schedule</button>
+                <button class="tab-btn sched-tab-btn" data-tab="tab-schedules-templates">Sample Templates Library</button>
             </div>
 
-            <div class="modal-body">
+            <div class="modal-body sched-modal-body">
                 <!-- TAB 1: SCHEDULES LIST -->
-                <div class="tab-pane active" id="tab-schedules-list">
+                <div class="tab-pane sched-tab-pane active" id="tab-schedules-list">
                     <div class="schedules-top-bar">
                         <div class="schedules-filter-pills">
                             <button class="sched-pill active" data-cat="all">All</button>
@@ -577,7 +581,7 @@
                 </div>
 
                 <!-- TAB 2: CREATE / EDIT SCHEDULE -->
-                <div class="tab-pane" id="tab-schedules-create">
+                <div class="tab-pane sched-tab-pane" id="tab-schedules-create">
                     <form id="form-schedule" class="schedule-form">
                         <input type="hidden" id="sched-edit-id" value="">
 
@@ -743,7 +747,7 @@
                 </div>
 
                 <!-- TAB 3: SAMPLE TEMPLATES LIBRARY -->
-                <div class="tab-pane" id="tab-schedules-templates">
+                <div class="tab-pane sched-tab-pane" id="tab-schedules-templates">
                     <p class="secondary-text mb-3">Browse curated templates for all occasions. Click <strong>"Use Template"</strong> to load it directly into your schedule:</p>
                     <div id="templates-library-grid" class="templates-library-grid">
                         <!-- Loaded dynamically -->
